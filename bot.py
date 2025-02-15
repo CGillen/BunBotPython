@@ -119,10 +119,13 @@ def is_valid_url(url):
 
 async def send_song_info(ctx):
   url = get_state(ctx.guild.id, 'current_stream_url')
+  if not url:
+    logger.warn('Stream URL not set, can\'t send song information to channel')
+    return
 
   stationinfo = streamscrobbler.get_server_info(url)
   if stationinfo['status'] <= 0:
-    logger.warning('Stream not up, unable to update song title')
+    logger.warn('Stream not up, unable to update song title')
     raise shout_errors.StreamOffline()
 
   embed_data = {
@@ -150,6 +153,9 @@ async def refresh_stream(ctx):
 #  Start metadata monitor (will close stream if streaming server goes down)
 async def play_stream(ctx):
   url = get_state(ctx.guild.id, 'current_stream_url')
+  if not url:
+    logger.warn('No stream currently set, can\'t play nothing')
+    raise shout_errors.NoStreamSelected
   logger.info(f'Starting channel {url}')
   await ctx.send(f'Starting channel {url}')
 
@@ -181,7 +187,6 @@ async def play_stream(ctx):
     raise shout_errors.AuthorNotInVoice
 
   voice_client = get_state(ctx.guild.id, 'voice_client')
-  # voice_client = bot.get(ctx.bot.voice_clients, guild=ctx.guild)
   if not voice_client:
     voice_client = await voice_channel.connect()
     set_state(ctx.guild.id, 'voice_client', voice_client)
@@ -205,6 +210,9 @@ async def disconnect_stream(ctx):
   await stop_playback(ctx)
 
   voice_client = get_state(ctx.guild.id, 'voice_client')
+  if not voice_client:
+    logger.warn('Not in a voice call, no stream to disconnect')
+    return
   await voice_client.disconnect()
 
   logger.info('Bot disconnected')
@@ -214,13 +222,16 @@ async def disconnect_stream(ctx):
 
 async def close_stream_connection(ctx):
   resp = get_state(ctx.guild.id, 'current_stream_response')
-  resp.close()
+  if resp:
+    resp.close()
 
 async def stop_playback(ctx):
   voice_client = get_state(ctx.guild.id, 'voice_client')
-  voice_client.stop()
+  if voice_client:
+    voice_client.stop()
   metadata_listener = get_state(ctx.guild.id, 'metadata_listener')
-  metadata_listener.cancel()
+  if metadata_listener:
+    metadata_listener.cancel()
 
 # Watch the stream's metadata to see if it's still up
 async def monitor_metadata(ctx):
@@ -231,6 +242,10 @@ async def monitor_metadata(ctx):
   voice_client = get_state(ctx.guild.id, 'voice_client')
   song = None
   num_read_bytes = 0
+
+  if None in {url, resp, voice_client}:
+    logger.warn('Metadata monitor does not have enough information to start')
+    return
 
   try:
     logger.info('Monitoring stream for metadata')
