@@ -79,13 +79,12 @@ async def song(ctx):
     else:
       raise shout_errors.NoStreamSelected
 
-# @bot.command()
-# async def refresh(ctx):
-#     if (state['current_stream_url']):
-#       # TODO: refresh_stream()
-#       await ctx.send("🐉 Stream refreshed. Boss!")
-#     else:
-#       await ctx.send(NO_STREAM_MESSAGE)
+@bot.command()
+async def refresh(ctx):
+    if (get_state(ctx.guild.id, 'current_stream_url')):
+      await refresh_stream(ctx)
+    else:
+      raise shout_errors.NoStreamSelected
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -134,6 +133,12 @@ async def send_song_info(ctx):
   embed.set_footer(text=f'Source: {url}')
   await ctx.send(embed=embed)
 
+async def refresh_stream(ctx):
+  await ctx.send('♻️ Refreshing stream, the bot may skip or leave and re-enter')
+  await close_stream_connection(ctx)
+  await asyncio.sleep(1)
+  await play_stream(ctx)
+
 # Start playing music from the stream
 #  Check connection/status of server
 #  Get stream connection to server
@@ -165,7 +170,7 @@ async def play_stream(ctx):
     set_state(ctx.guild.id, 'current_stream_response', resp)
   except Exception as e: # If there was any error connecting let user know and error out
     logger.error(f'Failed to connect to stream: {e.message}')
-    ctx.send(f'Error fetching stream. Maybe the stream is down?')
+    await ctx.send(f'Error fetching stream. Maybe the stream is down?')
     return
 
   # Connect to voice channel author is currently in
@@ -196,26 +201,32 @@ async def disconnect_stream(ctx):
 
   logger.info('Bot disconnected')
   # Make sure to close out stream connection, just in case
-  resp = get_state(ctx.guild.id, 'current_stream_response')
-  resp.close()
+  close_stream_connection(ctx)
 
   # Reset the bot for this guild
   clear_state(ctx.guild.id)
+
+async def close_stream_connection(ctx):
+  resp = get_state(ctx.guild.id, 'current_stream_response')
+  resp.close()
 
 # Watch the stream's metadata to see if it's still up
 async def monitor_metadata(ctx):
   logger.info('Starting metadata monitor')
 
   url = get_state(ctx.guild.id, 'current_stream_url')
+  resp = get_state(ctx.guild.id, 'current_stream_response')
   voice_client = get_state(ctx.guild.id, 'voice_client')
   song = None
+  num_read_bytes = 0
 
   try:
     logger.info('Monitoring stream for metadata')
     # This is a looping "daemon"
     while voice_client.is_playing():
       stationinfo = streamscrobbler.get_server_info(url)
-      if stationinfo['status'] <= 0:
+      # Stream is over if the server reports closed or no bytes have been read since we last checked
+      if stationinfo['status'] <= 0 or resp.raw.tell() <= num_read_bytes:
         logger.info('Stream ended, disconnecting stream')
         raise shout_errors.StreamOffline('Stream is offline')
       else:
@@ -227,6 +238,7 @@ async def monitor_metadata(ctx):
           await send_song_info(ctx)
           song = stationinfo['metadata']['song']
           logger.info(f'Current station info: {stationinfo}')
+        num_read_bytes = resp.raw.tell()
         logger.debug(stationinfo)
 
       # Only check every 15sec
