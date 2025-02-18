@@ -1,3 +1,5 @@
+discord.py==2.4.0
 python-dotenv==1.0.1
+requests==2.32.3
 streamscrobbler @ git+https://github.com/Horrendus/streamscrobbler-python.git@ec8fd4e1549b7cba25833950aa565b17700453e0
 validators==0.34.0
