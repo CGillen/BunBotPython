@@ -131,7 +131,7 @@ async def send_song_info(ctx):
   embed_data = {
     'title': 'Now Playing',
     'color': 0x0099ff,
-    'description': f'🎶 {stationinfo['metadata']['song']} 🎶',
+    'description': f'🎶 {stationinfo["metadata"]["song"]} 🎶',
     'timestamp': str(datetime.datetime.now(datetime.UTC)),
   }
   embed = discord.Embed.from_dict(embed_data)
