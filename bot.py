@@ -65,29 +65,31 @@ async def on_ready():
     description="Begin playback of a shoutcast/icecast stream"
 )
 @commands.cooldown(1, 5)
-async def play(ctx, url: str):
+async def play(interaction: discord.Interaction, url: str):
   if not is_valid_url(url):
     raise commands.BadArgument()
 
-  await play_stream(ctx, url)
+  await interaction.response.send_message(f'Starting channel {url}')
+  await play_stream(interaction, url)
 
 @bot.tree.command(
     name="leave",
     description="Remove the bot from the current call"
 )
 @commands.cooldown(1, 5)
-async def leave(ctx):
-  await disconnect_stream(ctx)
-  await ctx.send("👋 Seeya Later, Gator!")
+async def leave(interaction: discord.Interaction):
+  await disconnect_stream(interaction)
+  await interaction.response.send_message("👋 Seeya Later, Gator!")
 
 @bot.tree.command(
     name="song",
     description="Send an embed with the current song information to this channel"
 )
 @commands.cooldown(1, 5)
-async def song(ctx):
-  if (get_state(ctx.guild.id, 'current_stream_url')):
-    await send_song_info(ctx)
+async def song(interaction: discord.Interaction):
+  if (get_state(interaction.guild.id, 'current_stream_url')):
+    stationinfo = get_station_info(interaction)
+    await interaction.response.send_message(f'Now Playing: 🎶 {stationinfo["metadata"]["song"]} 🎶')
   else:
     raise shout_errors.NoStreamSelected
 
@@ -96,37 +98,38 @@ async def song(ctx):
     description="Refresh the stream. Bot will leave and come back"
 )
 @commands.cooldown(1, 5)
-async def refresh(ctx):
-  if (get_state(ctx.guild.id, 'current_stream_url')):
-    await refresh_stream(ctx)
+async def refresh(interaction: discord.Interaction):
+  if (get_state(interaction.guild.id, 'current_stream_url')):
+    await interaction.response.send_message('♻️ Refreshing stream, the bot may skip or leave and re-enter')
+    await refresh_stream(interaction)
   else:
     raise shout_errors.NoStreamSelected
 
 @bot.event
-async def on_command_error(ctx, error):
+async def on_command_error(interaction, error):
   logger.debug(error)
   if isinstance(error, commands.MissingRequiredArgument):
     # Handle missing argument error for this specific command
-    await ctx.send(f"☠️ Please provide a valid Shoutcast v2 stream link Example: `!play [shoutcast v2 stream link]`")
+    await interaction.channel.send(f"☠️ Please provide a valid Shoutcast v2 stream link Example: `!play [shoutcast v2 stream link]`")
   elif isinstance(error, commands.BadArgument):
     # Handle bad argument error (e.g., type error)
-    await ctx.send(f"'☠️ The provided link is not a valid URL. Please provide a valid Shoutcast stream link.'")
+    await interaction.channel.send(f"'☠️ The provided link is not a valid URL. Please provide a valid Shoutcast stream link.'")
   elif isinstance(error, commands.CommandNotFound):
     pass
   elif isinstance(error, shout_errors.StreamOffline):
     # Steam was found to be offline somewhere
-    await ctx.send(f'📋 Error fetching stream. Maybe the stream is down?')
+    await interaction.channel.send(f'📋 Error fetching stream. Maybe the stream is down?')
   elif isinstance(error, shout_errors.AuthorNotInVoice):
     # The person sending the command isn't in a voice chat
-    await ctx.send(f'😢 You are not in a voice channel. What are you doing? Where am I supposed to go? Don\'t leave me here')
+    await interaction.channel.send(f'😢 You are not in a voice channel. What are you doing? Where am I supposed to go? Don\'t leave me here')
   elif isinstance(error, shout_errors.NoStreamSelected):
     # A stream hasn't started yet
-    await ctx.send(f'🙄 No stream started, what did you expect me to do?')
+    await interaction.channel.send(f'🙄 No stream started, what did you expect me to do?')
   elif isinstance(error, commands.CommandOnCooldown):
-    await ctx.send(f'🥵 Slow down, I can only handle so much!')
+    await interaction.channel.send(f'🥵 Slow down, I can only handle so much!')
   else:
     # General error handler for other errors
-    await ctx.send(f'🤷 An unexpected error occurred while processing your command:\n{error}')
+    await interaction.channel.send(f'🤷 An unexpected error occurred while processing your command:\n{error}')
 
 
 
@@ -135,16 +138,9 @@ async def on_command_error(ctx, error):
 def is_valid_url(url):
   return validators.url(url)
 
-async def send_song_info(ctx):
-  url = get_state(ctx.guild.id, 'current_stream_url')
-  if not url:
-    logger.warning('Stream URL not set, can\'t send song information to channel')
-    return
-
-  stationinfo = streamscrobbler.get_server_info(url)
-  if stationinfo['status'] <= 0:
-    logger.warning('Stream not up, unable to update song title')
-    raise shout_errors.StreamOffline()
+async def send_song_info(interaction: discord.Interaction):
+  stationinfo = get_station_info(interaction)
+  url = get_state(interaction.guild.id, 'current_stream_url')
 
   embed_data = {
     'title': 'Now Playing',
@@ -154,15 +150,27 @@ async def send_song_info(ctx):
   }
   embed = discord.Embed.from_dict(embed_data)
   embed.set_footer(text=f'Source: {url}')
-  await ctx.send(embed=embed)
+  await interaction.channel.send(embed=embed)
 
-async def refresh_stream(ctx):
-  url = get_state(ctx.guild.id, 'current_stream_url')
+def get_station_info(interaction: discord.Interaction):
+  url = get_state(interaction.guild.id, 'current_stream_url')
+  if not url:
+    logger.warning('Stream URL not set, can\'t send song information to channel')
+    raise shout_errors.NoStreamSelected()
 
-  await ctx.send('♻️ Refreshing stream, the bot may skip or leave and re-enter')
-  await stop_playback(ctx)
-  await close_stream_connection(ctx)
-  await play_stream(ctx, url)
+  stationinfo = streamscrobbler.get_server_info(url)
+  if stationinfo['status'] <= 0:
+    logger.warning('Stream not up, unable to update song title')
+    raise shout_errors.StreamOffline()
+
+  return stationinfo
+
+async def refresh_stream(interaction: discord.Interaction):
+  url = get_state(interaction.guild.id, 'current_stream_url')
+
+  await stop_playback(interaction)
+  await close_stream_connection(interaction)
+  await play_stream(interaction, url)
 
 # Start playing music from the stream
 #  Check connection/status of server
@@ -171,12 +179,12 @@ async def refresh_stream(ctx):
 #  Start ffmpeg transcoding stream
 #  Play stream
 #  Start metadata monitor (will close stream if streaming server goes down)
-async def play_stream(ctx, url):
+async def play_stream(interaction, url):
   if not url:
     logger.warning('No stream currently set, can\'t play nothing')
     raise shout_errors.NoStreamSelected
   logger.info(f'Starting channel {url}')
-  await ctx.send(f'Starting channel {url}')
+  # await interaction.channel.send(f'Starting channel {url}')
 
   stationinfo = streamscrobbler.get_server_info(url)
   ## metadata is the bitrate and current song
@@ -196,64 +204,63 @@ async def play_stream(ctx, url):
     resp.raise_for_status()
   except Exception as error: # If there was any error connecting let user know and error out
     logger.error(f'Failed to connect to stream: {error}')
-    await ctx.send(f'Error fetching stream. Maybe the stream is down?')
+    await interaction.channel.send(f'Error fetching stream. Maybe the stream is down?')
     return
 
   # Connect to voice channel author is currently in
-  voice_channel = ctx.message.author.voice.channel
+  voice_channel = interaction.user.voice.channel
   if voice_channel is None:
     raise shout_errors.AuthorNotInVoice
 
-  voice_client = ctx.guild.voice_client
+  voice_client = interaction.guild.voice_client
   if not voice_client:
     voice_client = await voice_channel.connect()
 
   # Pipe music stream to FFMpeg
   music_stream = discord.FFmpegPCMAudio(resp.raw, pipe=True, options='-filter:a loudnorm=I=-36:LRA=4:TP=-4')
-  # voice_client.play(music_stream, after=lambda e: asyncio.run_coroutine_threadsafe(disconnect_stream(ctx), ctx.bot.loop))
   voice_client.play(music_stream)
 
-  metadata_listener = asyncio.create_task(monitor_metadata(ctx))
+  metadata_listener = asyncio.create_task(monitor_metadata(interaction))
   # Everything was successful, lets keep all the data
-  set_state(ctx.guild.id, 'current_stream_url', url)
-  set_state(ctx.guild.id, 'current_stream_response', resp)
-  set_state(ctx.guild.id, 'metadata_listener', metadata_listener)
+  set_state(interaction.guild.id, 'current_stream_url', url)
+  set_state(interaction.guild.id, 'current_stream_response', resp)
+  set_state(interaction.guild.id, 'metadata_listener', metadata_listener)
   logger.info('Metadata monitor set')
 
-  await send_song_info(ctx)
+  await send_song_info(interaction)
 
 
 # Handle disconnecting the bot from VC after stream closes
-async def disconnect_stream(ctx):
+async def disconnect_stream(interaction: discord.Interaction):
   logger.info('Disconnecting bot')
 
-  await stop_playback(ctx)
+  await stop_playback(interaction)
 
-  voice_client = ctx.guild.voice_client
+  voice_client = interaction.guild.voice_client
   if not voice_client:
     logger.warning('Not in a voice call, no stream to disconnect')
     return
   await voice_client.disconnect()
 
   logger.info('Bot disconnected')
-  await close_stream_connection(ctx)
+  await close_stream_connection(interaction)
 
   # Reset the bot for this guild
-  clear_state(ctx.guild.id)
+  clear_state(interaction.guild.id)
 
-async def close_stream_connection(ctx):
-  resp = get_state(ctx.guild.id, 'current_stream_response')
+async def close_stream_connection(interaction: discord.Interaction):
+  resp = get_state(interaction.guild.id, 'current_stream_response')
   if resp:
     try:
       resp.close()
     except Exception as e:
       logger.warning(f'Failed closing stream: #{e}')
 
-async def stop_playback(ctx):
-  voice_client = ctx.guild.voice_client
+async def stop_playback(interaction: discord.Interaction):
+  voice_client = interaction.guild.voice_client
   if voice_client:
     voice_client.stop()
-  metadata_listener = get_state(ctx.guild.id, 'metadata_listener')
+  metadata_listener = get_state(interaction.guild.id, 'metadata_listener')
   if metadata_listener:
     metadata_listener.cancel()
     try:
@@ -263,12 +270,12 @@ async def stop_playback(ctx):
       print(f'metadata_listener canceled as an exception')
 
 # Watch the stream's metadata to see if it's still up
-async def monitor_metadata(ctx):
+async def monitor_metadata(interaction: discord.Interaction):
   logger.info('Starting metadata monitor')
 
-  url = get_state(ctx.guild.id, 'current_stream_url')
-  resp = get_state(ctx.guild.id, 'current_stream_response')
-  voice_client = ctx.guild.voice_client
+  url = get_state(interaction.guild.id, 'current_stream_url')
+  resp = get_state(interaction.guild.id, 'current_stream_response')
+  voice_client = interaction.guild.voice_client
   song = None
   num_read_bytes = 0
 
@@ -293,18 +300,18 @@ async def monitor_metadata(ctx):
           song = stationinfo['metadata']['song']
           logger.info(f'Current station info: {stationinfo}')
         elif song != stationinfo['metadata']['song']:
-          await send_song_info(ctx)
+          await send_song_info(interaction)
           song = stationinfo['metadata']['song']
           logger.info(f'Current station info: {stationinfo}')
         num_read_bytes = resp.raw.tell()
         logger.debug(stationinfo)
 
       # Only check every 15sec
-      await asyncio.sleep(5)
+      await asyncio.sleep(15)
   except Exception as error: # Something went wrong, let's just close it all out
     logger.error(f'Something went wrong while checking stream metadata: {error}')
     logger.error(f'Closing down stream & disconnecting bot')
-    await disconnect_stream(ctx)
+    await disconnect_stream(interaction)
   logger.info('Ending metadata monitor')
 
 # Getter for state of a guild
