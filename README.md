@@ -16,5 +16,7 @@ EPIC tranlation done by: [CGillen](https://github.com/CGillen)!
 # So what's new?
 - `Volume nomalization`
 - `More robust error handling`
+- `uses slash commands now!`
 - `changed audio receiver library to discord integrated`
 - `migrated to python!`
+- `various bugfixes`
