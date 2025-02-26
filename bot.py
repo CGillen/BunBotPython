@@ -64,7 +64,7 @@ async def on_ready():
     name="play",
     description="Begin playback of a shoutcast/icecast stream"
 )
-@commands.cooldown(1, 5)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
 async def play(interaction: discord.Interaction, url: str):
   if not is_valid_url(url):
     raise commands.BadArgument("🙇 I'm sorry, I don't know what that means!")
@@ -76,7 +76,7 @@ async def play(interaction: discord.Interaction, url: str):
     name="leave",
     description="Remove the bot from the current call"
 )
-@commands.cooldown(1, 5)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
 async def leave(interaction: discord.Interaction):
   voice_client = interaction.guild.voice_client
   if voice_client:
@@ -89,7 +89,7 @@ async def leave(interaction: discord.Interaction):
     name="song",
     description="Send an embed with the current song information to this channel"
 )
-@commands.cooldown(1, 5)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
 async def song(interaction: discord.Interaction):
   if (get_state(interaction.guild.id, 'current_stream_url')):
     stationinfo = get_station_info(interaction)
@@ -101,17 +101,17 @@ async def song(interaction: discord.Interaction):
     name="refresh",
     description="Refresh the stream. Bot will leave and come back"
 )
-@commands.cooldown(1, 5)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
 async def refresh(interaction: discord.Interaction):
   if (get_state(interaction.guild.id, 'current_stream_url')):
-    await interaction.response.send_message('♻️ Refreshing stream, the bot may skip or leave and re-enter')
     await refresh_stream(interaction)
+    await interaction.response.send_message('♻️ Refreshing stream, the bot may skip or leave and re-enter')
   else:
     raise shout_errors.NoStreamSelected
 
 @bot.tree.error
 async def on_command_error(interaction, error):
-  original_error = error.original
+  original_error = error.original if hasattr(error, 'original') else error
   error_message=''
   if isinstance(original_error, commands.MissingRequiredArgument):
     # Handle missing argument error for this specific command
@@ -133,7 +133,7 @@ async def on_command_error(interaction, error):
   elif isinstance(original_error, shout_errors.NoVoiceClient):
     # There isn't a voice client to operate on
     error_message = f'🙇 I\'m not playing any music! Please stop harassing me'
-  elif isinstance(original_error, commands.CommandOnCooldown):
+  elif isinstance(original_error, discord.app_commands.errors.CommandOnCooldown):
     # Commands are being sent too quickly
     error_message = f'🥵 Slow down, I can only handle so much!'
   else:
