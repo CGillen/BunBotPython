@@ -67,7 +67,7 @@ async def on_ready():
 @commands.cooldown(1, 5)
 async def play(interaction: discord.Interaction, url: str):
   if not is_valid_url(url):
-    raise commands.BadArgument()
+    raise commands.BadArgument("🙇 I'm sorry, I don't know what that means!")
 
   await interaction.response.send_message(f'Starting channel {url}')
   await play_stream(interaction, url)
@@ -78,8 +78,12 @@ async def play(interaction: discord.Interaction, url: str):
 )
 @commands.cooldown(1, 5)
 async def leave(interaction: discord.Interaction):
-  await disconnect_stream(interaction)
-  await interaction.response.send_message("👋 Seeya Later, Gator!")
+  voice_client = interaction.guild.voice_client
+  if voice_client:
+    await disconnect_stream(interaction)
+    await interaction.response.send_message("👋 Seeya Later, Gator!")
+  else:
+    raise shout_errors.NoVoiceClient("😨 I'm not even playing any music! You don't have to be so mean")
 
 @bot.tree.command(
     name="song",
@@ -91,7 +95,7 @@ async def song(interaction: discord.Interaction):
     stationinfo = get_station_info(interaction)
     await interaction.response.send_message(f'Now Playing: 🎶 {stationinfo["metadata"]["song"]} 🎶')
   else:
-    raise shout_errors.NoStreamSelected
+    raise shout_errors.NoStreamSelected("🔎 None. There's no song playing. Turn the stream on maybe?")
 
 @bot.tree.command(
     name="refresh",
@@ -105,31 +109,40 @@ async def refresh(interaction: discord.Interaction):
   else:
     raise shout_errors.NoStreamSelected
 
-@bot.event
+@bot.tree.error
 async def on_command_error(interaction, error):
-  logger.debug(error)
-  if isinstance(error, commands.MissingRequiredArgument):
+  original_error = error.original
+  error_message=''
+  if isinstance(original_error, commands.MissingRequiredArgument):
     # Handle missing argument error for this specific command
-    await interaction.channel.send(f"☠️ Please provide a valid Shoutcast v2 stream link Example: `!play [shoutcast v2 stream link]`")
-  elif isinstance(error, commands.BadArgument):
+    error_message = f"☠️ Please provide a valid Shoutcast v2 stream link Example: `!play [shoutcast v2 stream link]`"
+  elif isinstance(original_error, commands.BadArgument):
     # Handle bad argument error (e.g., type error)
-    await interaction.channel.send(f"'☠️ The provided link is not a valid URL. Please provide a valid Shoutcast stream link.'")
-  elif isinstance(error, commands.CommandNotFound):
+    error_message = f"'☠️ The provided link is not a valid URL. Please provide a valid Shoutcast stream link.'"
+  elif isinstance(original_error, commands.CommandNotFound):
     pass
-  elif isinstance(error, shout_errors.StreamOffline):
+  elif isinstance(original_error, shout_errors.StreamOffline):
     # Steam was found to be offline somewhere
-    await interaction.channel.send(f'📋 Error fetching stream. Maybe the stream is down?')
-  elif isinstance(error, shout_errors.AuthorNotInVoice):
+    error_message = f'📋 Error fetching stream. Maybe the stream is down?'
+  elif isinstance(original_error, shout_errors.AuthorNotInVoice):
     # The person sending the command isn't in a voice chat
-    await interaction.channel.send(f'😢 You are not in a voice channel. What are you doing? Where am I supposed to go? Don\'t leave me here')
-  elif isinstance(error, shout_errors.NoStreamSelected):
+    error_message = f'😢 You are not in a voice channel. What are you doing? Where am I supposed to go? Don\'t leave me here'
+  elif isinstance(original_error, shout_errors.NoStreamSelected):
     # A stream hasn't started yet
-    await interaction.channel.send(f'🙄 No stream started, what did you expect me to do?')
-  elif isinstance(error, commands.CommandOnCooldown):
-    await interaction.channel.send(f'🥵 Slow down, I can only handle so much!')
+    error_message = f'🙄 No stream started, what did you expect me to do?'
+  elif isinstance(original_error, shout_errors.NoVoiceClient):
+    # There isn't a voice client to operate on
+    error_message = f'🙇 I\'m not playing any music! Please stop harassing me'
+  elif isinstance(original_error, commands.CommandOnCooldown):
+    # Commands are being sent too quickly
+    error_message = f'🥵 Slow down, I can only handle so much!'
   else:
     # General error handler for other errors
-    await interaction.channel.send(f'🤷 An unexpected error occurred while processing your command:\n{error}')
+    error_message = f'🤷 An unexpected error occurred while processing your command:\n{error}'
+  if interaction.response.is_done():
+    await interaction.channel.send(error_message)
+  else:
+    await interaction.response.send_message(error_message)
 
 
 
