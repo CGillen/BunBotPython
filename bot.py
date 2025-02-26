@@ -1,11 +1,11 @@
 import discord
+from discord.ext import commands
 import asyncio
 import os, datetime
 import logging, logging.handlers
 import requests
 import validators
 import shout_errors
-from discord.ext import commands
 from dotenv import load_dotenv
 from pathlib import Path
 from streamscrobbler import streamscrobbler
@@ -19,7 +19,7 @@ LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix='!', case_insensitive=True, intents=intents)
+bot = commands.Bot(command_prefix='/', case_insensitive=True, intents=intents)
 server_state = {}
 ### Available state variables ###
 # current_stream_url = URL to playing (or about to be played) shoutcast stream
@@ -55,10 +55,15 @@ logger.addHandler(file_handler)
 
 @bot.event
 async def on_ready():
+  logger.info(f'Syncing slash commands')
+  await bot.tree.sync()
   logger.info(f'Logged on as {bot.user}')
 
 
-@bot.command()
+@bot.tree.command(
+    name="play",
+    description="Begin playback of a shoutcast/icecast stream"
+)
 @commands.cooldown(1, 5)
 async def play(ctx, url: str):
   if not is_valid_url(url):
@@ -66,13 +71,19 @@ async def play(ctx, url: str):
 
   await play_stream(ctx, url)
 
-@bot.command()
+@bot.tree.command(
+    name="leave",
+    description="Remove the bot from the current call"
+)
 @commands.cooldown(1, 5)
 async def leave(ctx):
   await disconnect_stream(ctx)
   await ctx.send("👋 Seeya Later, Gator!")
 
-@bot.command()
+@bot.tree.command(
+    name="song",
+    description="Send an embed with the current song information to this channel"
+)
 @commands.cooldown(1, 5)
 async def song(ctx):
   if (get_state(ctx.guild.id, 'current_stream_url')):
@@ -80,7 +91,10 @@ async def song(ctx):
   else:
     raise shout_errors.NoStreamSelected
 
-@bot.command()
+@bot.tree.command(
+    name="refresh",
+    description="Refresh the stream. Bot will leave and come back"
+)
 @commands.cooldown(1, 5)
 async def refresh(ctx):
   if (get_state(ctx.guild.id, 'current_stream_url')):
