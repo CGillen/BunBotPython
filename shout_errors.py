@@ -6,3 +6,5 @@ class NoStreamSelected(Exception):
   pass
 class NoVoiceClient(Exception):
   pass
+class AlreadyPlaying(Exception):
+  pass
