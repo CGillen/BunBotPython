@@ -32,4 +32,4 @@ If you have any questions or concerns about this Privacy Policy, please contact 
 
 # Effective Date
 
-This Privacy Policy is effective as of 2-27-2025.
+This Privacy Policy is effective as of 3-8-2025.
