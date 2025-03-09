@@ -109,6 +109,27 @@ async def refresh(interaction: discord.Interaction):
   else:
     raise shout_errors.NoStreamSelected
 
+@bot.tree.command(
+    name="debug",
+    description="Show debug stats & info"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+async def debug(interaction: discord.Interaction):
+  resp = []
+  resp.append("==\tGlobal Info\t==")
+
+  if (bot.is_owner(interaction.user)):
+    resp.append("Guilds:")
+    for guild in bot.guilds:
+      guild_name = f"[{guild.name}]({guild.vanity_url})" if guild.vanity_url else guild.name
+      resp.append(f"- {guild_name}: user count - {guild.member_count}")
+  else:
+    resp.append(f"Guild count: {bot.guilds.count()}")
+
+  await interaction.response.send_message("\n".join(resp))
+
+
+
 @bot.tree.error
 async def on_command_error(interaction, error):
   original_error = error.original if hasattr(error, 'original') else error
