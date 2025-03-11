@@ -117,8 +117,10 @@ async def refresh(interaction: discord.Interaction):
 async def debug(interaction: discord.Interaction):
   resp = []
   resp.append("==\tGlobal Info\t==")
+  ephemeral = False
 
   if (bot.is_owner(interaction.user)):
+    ephemeral = True
     resp.append("Guilds:")
     for guild in bot.guilds:
       guild_name = f"[{guild.name}]({guild.vanity_url})" if guild.vanity_url else guild.name
@@ -126,7 +128,7 @@ async def debug(interaction: discord.Interaction):
   else:
     resp.append(f"Guild count: {bot.guilds.count()}")
 
-  await interaction.response.send_message("\n".join(resp))
+  await interaction.response.send_message("\n".join(resp), ephemeral=ephemeral)
 
 
 
