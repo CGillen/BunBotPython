@@ -291,6 +291,7 @@ async def stop_playback(interaction: discord.Interaction):
   if voice_client and voice_client.is_playing():
     voice_client.stop()
     logger.info("cancelling metadata listener")
+    #TODO Some crashes get stuck here. But running `/refresh` will make this continue and finish this method
     metadata_listener.cancel()
     await metadata_listener
 
@@ -328,11 +329,13 @@ async def monitor_metadata(interaction: discord.Interaction):
       stationinfo = streamscrobbler.get_server_info(url)
       # Stream is over if the server reports closed or no bytes have been read since we last checked
       if stationinfo is None:
-        logger.warning("Streamscrobbler returned None from server info")
+        logger.warning("Streamscrobbler returned info as None from server")
       elif stationinfo['status'] <= 0:
         logger.info("Stream ended, disconnecting stream")
         logger.debug(stationinfo)
         raise shout_errors.StreamOffline("Stream is offline")
+      elif stationinfo['metadata'] is None:
+        logger.warning("Streamscrobbler returned metadata as None from server")
       else:
         # Check if the song has changed & announce the new one
         if isinstance(stationinfo['metadata']['song'], str):
