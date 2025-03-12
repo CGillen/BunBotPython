@@ -2,7 +2,7 @@
 Bunbot was originally a javascript based bot, but has been rewritten in Python now!
 
 
-It's designed to play Shoutcast v2 and some Icecast streams. It supports the following commands:
+It's designed to play Shoutcast and some Icecast streams. It supports the following commands:
 - `/play`: Start playing the stream.
 - `/leave`: Leave the voice channel.
 - `/refresh`: Refresh the stream list.
@@ -18,9 +18,11 @@ EPIC tranlation done by: [CGillen](https://github.com/CGillen)!
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/J3J61BNDZO)
 
 # So what's new?
+- `Implemented Shoutcast v1! 🎉`
 - `Volume nomalization`
-- `More robust error handling`
+- `More robust-er error handling`
 - `uses slash commands now!`
 - `changed audio receiver library to discord integrated`
 - `migrated to python!`
+- `hac-I mean added ICY support to urllib.py`
 - `various bugfixes`
