@@ -127,8 +127,7 @@ async def debug(interaction: discord.Interaction):
     ephemeral = True
     resp.append("Guilds:")
     for guild in bot.guilds:
-      guild_name = f"[{guild.name}]({guild.vanity_url})" if guild.vanity_url else guild.name
-      resp.append(f"- {guild_name}: user count - {guild.member_count}")
+      resp.append(f"- {guild.name} ({guild.id}): user count - {guild.member_count}")
       resp.append(f"\tState: {get_state(guild.id)}")
   else:
     resp.append(f"Guild count: {bot.guilds.count()}")
@@ -285,15 +284,15 @@ async def close_stream_connection(interaction: discord.Interaction):
       logger.warning(f"Failed closing stream: #{e}")
   logger.info("resp closed")
 
-async def stop_playback(interaction: discord.Interaction):
+async def stop_playback(interaction: discord.Interaction, from_listener: bool=False):
   voice_client = interaction.guild.voice_client
   metadata_listener = get_state(interaction.guild.id, 'metadata_listener')
   if voice_client and voice_client.is_playing():
     voice_client.stop()
     logger.info("cancelling metadata listener")
-    #TODO Some crashes get stuck here. But running `/refresh` will make this continue and finish this method
-    metadata_listener.cancel()
-    await metadata_listener
+    if not from_listener:
+      metadata_listener.cancel()
+      await metadata_listener
 
     while voice_client.is_connected():
       logger.debug("waiting for client to leave")
@@ -357,9 +356,9 @@ async def monitor_metadata(interaction: discord.Interaction):
   except Exception as error: # Something went wrong, let's just close it all out
     logger.error(f"Something went wrong while checking stream metadata: {error}")
     logger.error("Closing down stream & disconnecting bot")
-    if voice_client.is_playing():
-      await stop_playback(interaction)
+    await interaction.channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
   logger.info("Ending metadata monitor")
+  await stop_playback(interaction, True)
 
 # Getter for state of a guild
 def get_state(guild_id, var=None):
