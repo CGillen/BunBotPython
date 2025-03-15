@@ -17,10 +17,30 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 LOG_FILE_PATH = Path(os.getenv('LOG_FILE_PATH', './')).joinpath('log.txt')
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
 
+# CLUSETERING INFORMATION
+CLUSTER_ID = int(os.environ.get('CLUSTER_ID', 0))
+TOTAL_CLUSTERS = int(os.environ.get('TOTAL_CLUSTERS', 1))
+TOTAL_SHARDS = int(os.environ.get('TOTAL_SHARDS', 1))
+NUMBER_OF_SHARDS_PER_CLUSTER = int(TOTAL_SHARDS / TOTAL_CLUSTERS)
+
+# Identify which shards we are, based on our max shards & cluster ID
+shard_ids = [
+  i
+  for i in range(
+    CLUSTER_ID * NUMBER_OF_SHARDS_PER_CLUSTER,
+    (CLUSTER_ID * NUMBER_OF_SHARDS_PER_CLUSTER) + NUMBER_OF_SHARDS_PER_CLUSTER
+  )
+  if i < TOTAL_SHARDS
+]
+# END CLUSTERING
+
 intents = discord.Intents.default()
 intents.message_content = True
 
-bot = commands.Bot(command_prefix='/', case_insensitive=True, intents=intents)
+bot = commands.AutoShardedBot(command_prefix='/', case_insensitive=True, intents=intents, shard_ids=shard_ids, shard_count=TOTAL_SHARDS)
+bot.cluster_id = CLUSTER_ID
+bot.total_shards = TOTAL_SHARDS
+
 server_state = {}
 ### Available state variables ###
 # current_stream_url = URL to playing (or about to be played) shoutcast stream
@@ -62,6 +82,8 @@ async def on_ready():
   logger.info("Syncing slash commands")
   await bot.tree.sync()
   logger.info(f"Logged on as {bot.user}")
+  logger.info(f"Shard IDS: {bot.shard_ids}")
+  logger.info(f"Cluster ID: {bot.cluster_id}")
 
 
 @bot.tree.command(
@@ -129,6 +151,10 @@ async def debug(interaction: discord.Interaction):
     for guild in bot.guilds:
       resp.append(f"- {guild.name} ({guild.id}): user count - {guild.member_count}")
       resp.append(f"\tState: {get_state(guild.id)}")
+      resp.append(f"\tShard: {guild.shard_id}")
+    resp.append("Bot:")
+    resp.append(f"\tCluster ID: {bot.cluster_id}")
+    resp.append(f"\tShards: {bot.shard_ids}")
   else:
     resp.append(f"Guild count: {bot.guilds.count()}")
 
