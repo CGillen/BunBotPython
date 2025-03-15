@@ -1,5 +1,14 @@
 services:
   discord:
     build: .
+    container_name: 'discord'
     volumes:
       - ./:/app
+    environment:
+      - CLUSTER_ID=0
+  discord1:
+    container_name: 'discord1'
+    extends:
+      service: discord
+    environment:
+      - CLUSTER_ID=1
