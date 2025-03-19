@@ -338,17 +338,15 @@ async def stop_playback(guild: discord.Guild):
 
 @tasks.loop(seconds = 15)
 async def monitor_metadata():
-  logger.info(f"Checking metadata for all streams")
+  logger.debug(f"Checking metadata for all streams")
   active_guild_ids = all_active_guild_ids()
   for guild_id in active_guild_ids:
     logger.info(f"[{guild_id}]: Checking metadata")
 
     try:
-      logger.info(f"[{guild_id}]: {get_state(guild_id)}")
+      logger.debug(f"[{guild_id}]: {get_state(guild_id)}")
       song = get_state(guild_id, 'current_song')
       url = get_state(guild_id, 'current_stream_url')
-      logger.info(f"[{guild_id}]: song - {song}")
-      logger.info(f"[{guild_id}]: url - {url}")
 
       if url is None:
         logger.warning("Metadata monitor does not have enough information to check")
