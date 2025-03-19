@@ -1,5 +1,6 @@
+from http.client import HTTPResponse
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import asyncio
 import os, datetime
 import logging, logging.handlers
@@ -46,6 +47,7 @@ server_state = {}
 # current_stream_url = URL to playing (or about to be played) shoutcast stream
 # current_stream_response = http.client.HTTPResponse object from connecting to shoutcast stream
 # metadata_listener = Asyncio task for listening to metadata (monitor_metadata())
+# text_channel = Text channel original play command came from
 
 # Set up logging
 logger = logging.getLogger('discord')
@@ -81,6 +83,7 @@ async def on_ready():
 
   logger.info("Syncing slash commands")
   await bot.tree.sync()
+  monitor_metadata.start()
   logger.info(f"Logged on as {bot.user}")
   logger.info(f"Shard IDS: {bot.shard_ids}")
   logger.info(f"Cluster ID: {bot.cluster_id}")
@@ -107,7 +110,7 @@ async def leave(interaction: discord.Interaction):
   voice_client = interaction.guild.voice_client
   if voice_client:
     await interaction.response.send_message("👋 Seeya Later, Gator!")
-    await stop_playback(interaction)
+    await stop_playback(interaction.guild)
   else:
     raise shout_errors.NoVoiceClient("😨 I'm not even playing any music! You don't have to be so mean")
 
@@ -117,8 +120,9 @@ async def leave(interaction: discord.Interaction):
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 async def song(interaction: discord.Interaction):
-  if (get_state(interaction.guild.id, 'current_stream_url')):
-    stationinfo = get_station_info(interaction)
+  url = get_state(interaction.guild.id, 'current_stream_url')
+  if (url):
+    stationinfo = get_station_info(url)
     await interaction.response.send_message(f"Now Playing: 🎶 {stationinfo['metadata']['song']} 🎶")
   else:
     raise shout_errors.NoStreamSelected("🔎 None. There's no song playing. Turn the stream on maybe?")
@@ -143,10 +147,8 @@ async def refresh(interaction: discord.Interaction):
 async def debug(interaction: discord.Interaction):
   resp = []
   resp.append("==\tGlobal Info\t==")
-  ephemeral = False
 
   if (await bot.is_owner(interaction.user)):
-    ephemeral = True
     resp.append("Guilds:")
     for guild in bot.guilds:
       resp.append(f"- {guild.name} ({guild.id}): user count - {guild.member_count}")
@@ -158,7 +160,7 @@ async def debug(interaction: discord.Interaction):
   else:
     resp.append(f"Guild count: {bot.guilds.count()}")
 
-  await interaction.response.send_message("\n".join(resp), ephemeral=ephemeral)
+  await interaction.response.send_message("\n".join(resp), ephemeral=True)
 
 
 
@@ -207,9 +209,11 @@ async def on_command_error(interaction, error):
 def is_valid_url(url):
   return validators.url(url)
 
-async def send_song_info(interaction: discord.Interaction):
-  stationinfo = get_station_info(interaction)
-  url = get_state(interaction.guild.id, 'current_stream_url')
+# Find information about the playing station & send that as an embed to the original text channel
+async def send_song_info(guild_id: int):
+  url = get_state(guild_id, 'current_stream_url')
+  channel = get_state(guild_id, 'text_channel')
+  stationinfo = get_station_info(url)
 
   embed_data = {
     'title': "Now Playing",
@@ -219,10 +223,10 @@ async def send_song_info(interaction: discord.Interaction):
   }
   embed = discord.Embed.from_dict(embed_data)
   embed.set_footer(text=f"Source: {url}")
-  await interaction.channel.send(embed=embed)
+  await channel.send(embed=embed)
 
-def get_station_info(interaction: discord.Interaction):
-  url = get_state(interaction.guild.id, 'current_stream_url')
+# Retrieve information about the shoutcast stream
+def get_station_info(url: str):
   if not url:
     logger.warning("Stream URL not set, can't send song information to channel")
     raise shout_errors.NoStreamSelected()
@@ -234,10 +238,11 @@ def get_station_info(interaction: discord.Interaction):
 
   return stationinfo
 
+# Resync the stream by leaving and coming back
 async def refresh_stream(interaction: discord.Interaction):
   url = get_state(interaction.guild.id, 'current_stream_url')
 
-  await stop_playback(interaction)
+  await stop_playback(interaction.guild)
   await play_stream(interaction, url)
 
 # Start playing music from the stream
@@ -291,17 +296,16 @@ async def play_stream(interaction, url):
   # voice_client.play(music_stream)
   voice_client.play(music_stream, after=lambda e: asyncio.run_coroutine_threadsafe(voice_client.disconnect(), bot.loop))
 
-  metadata_listener = bot.loop.create_task(monitor_metadata(interaction))
   # Everything was successful, lets keep all the data
   set_state(interaction.guild.id, 'current_stream_url', url)
   set_state(interaction.guild.id, 'current_stream_response', resp)
-  set_state(interaction.guild.id, 'metadata_listener', metadata_listener)
-  logger.info("Metadata monitor & state set")
+  set_state(interaction.guild.id, 'text_channel', interaction.channel)
 
-  await send_song_info(interaction)
+  # And let the user know what song is playing
+  await send_song_info(interaction.guild.id)
 
-async def close_stream_connection(interaction: discord.Interaction):
-  resp = get_state(interaction.guild.id, 'current_stream_response')
+# Do our best to clean up the stream connection
+async def close_stream_connection(resp: HTTPResponse):
   logger.info("Closing stream")
   if resp:
     try:
@@ -310,81 +314,85 @@ async def close_stream_connection(interaction: discord.Interaction):
       logger.warning(f"Failed closing stream: #{e}")
   logger.info("resp closed")
 
-async def stop_playback(interaction: discord.Interaction, from_listener: bool=False):
-  voice_client = interaction.guild.voice_client
-  metadata_listener = get_state(interaction.guild.id, 'metadata_listener')
+# Disconnect the bot, close the stream, and reset state
+async def stop_playback(guild: discord.Guild):
+  voice_client = guild.voice_client
   if voice_client and voice_client.is_playing():
     voice_client.stop()
-    logger.info("cancelling metadata listener")
-    if not from_listener:
-      metadata_listener.cancel()
-      await metadata_listener
 
     while voice_client.is_connected():
       logger.debug("waiting for client to leave")
       await asyncio.sleep(1)
-    logger.info("voice client stopped")
+    logger.info("voice client disconnected")
 
   logger.debug("Call stream close")
-  await close_stream_connection(interaction)
+  resp = get_state(guild.id, 'current_stream_response')
+  await close_stream_connection(resp)
   logger.debug("Stream close called")
 
   # Reset the bot for this guild
-  logger.debug(f"Clearing guild state: {get_state(interaction.guild.id)}")
-  clear_state(interaction.guild.id)
-  logger.debug(f"Guild state cleared: {get_state(interaction.guild.id)}")
+  logger.debug(f"Clearing guild state: {get_state(guild.id)}")
+  clear_state(guild.id)
+  logger.debug(f"Guild state cleared: {get_state(guild.id)}")
 
-# Watch the stream's metadata to see if it's still up
-async def monitor_metadata(interaction: discord.Interaction):
-  logger.info("Starting metadata monitor")
 
-  url = get_state(interaction.guild.id, 'current_stream_url')
-  resp = get_state(interaction.guild.id, 'current_stream_response')
-  voice_client = interaction.guild.voice_client
-  song = None
+@tasks.loop(seconds = 15)
+async def monitor_metadata():
+  logger.info(f"Checking metadata for all streams")
+  active_guild_ids = all_active_guild_ids()
+  for guild_id in active_guild_ids:
+    logger.info(f"[{guild_id}]: Checking metadata")
 
-  if None in {url, resp, voice_client}:
-    logger.warning("Metadata monitor does not have enough information to start")
-    return
+    try:
+      logger.info(f"[{guild_id}]: {get_state(guild_id)}")
+      song = get_state(guild_id, 'current_song')
+      url = get_state(guild_id, 'current_stream_url')
+      logger.info(f"[{guild_id}]: song - {song}")
+      logger.info(f"[{guild_id}]: url - {url}")
 
-  try:
-    logger.info("Monitoring stream for metadata")
-    # This is a looping "daemon"
-    while voice_client.is_playing():
+      if url is None:
+        logger.warning("Metadata monitor does not have enough information to check")
+        continue
+
       stationinfo = streamscrobbler.get_server_info(url)
-      # Stream is over if the server reports closed or no bytes have been read since we last checked
       if stationinfo is None:
-        logger.warning("Streamscrobbler returned info as None from server")
+        logger.warning(f"[{guild_id}]: Streamscrobbler returned info as None")
       elif stationinfo['status'] <= 0:
-        logger.info("Stream ended, disconnecting stream")
+        logger.info(f"[{guild_id}]: Stream ended, disconnecting stream")
         logger.debug(stationinfo)
-        raise shout_errors.StreamOffline("Stream is offline")
+        raise shout_errors.StreamOffline(f"[{guild_id}]: Stream is offline")
       elif stationinfo['metadata'] is None:
-        logger.warning("Streamscrobbler returned metadata as None from server")
+        logger.warning(f"[{guild_id}]: Streamscrobbler returned metadata as None from server")
       else:
         # Check if the song has changed & announce the new one
         if isinstance(stationinfo['metadata']['song'], str):
+          logger.info(f"[{guild_id}]: {stationinfo}")
           if song is None:
-            song = stationinfo['metadata']['song']
-            logger.info(f"Current station info: {stationinfo}")
+            set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
+            logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
           elif song != stationinfo['metadata']['song']:
-            await send_song_info(interaction)
-            song = stationinfo['metadata']['song']
-            logger.info(f"Current station info: {stationinfo}")
-          logger.debug(stationinfo)
+            await send_song_info(guild_id)
+            set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
+            logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
         else:
           logger.warning("Received non-string value from server metadata")
+    except shout_errors.StreamOffline as error: # Stream went offline gracefully
+      logger.error(f"[{guild_id}]: The stream went offline: {error}")
+      channel = get_state(guild_id, 'text_channel')
+      guild = bot.get_guild(guild_id)
+      await channel.send("😰 The stream went offline, I gotta go!")
+      await stop_playback(guild)
+    except Exception as error: # Something went wrong, let's just close it all out
+      logger.error(f"[{guild_id}]: Something went wrong while checking stream metadata: {error}")
+      channel = get_state(guild_id, 'text_channel')
+      guild = bot.get_guild(guild_id)
+      await channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
+      await stop_playback(guild)
 
-      # Only check every 15sec
-      await asyncio.sleep(15)
-  except asyncio.CancelledError:
-    logger.info("We've been canceled!")
-  except Exception as error: # Something went wrong, let's just close it all out
-    logger.error(f"Something went wrong while checking stream metadata: {error}")
-    logger.error("Closing down stream & disconnecting bot")
-    await interaction.channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
-  logger.info("Ending metadata monitor")
-  await stop_playback(interaction, True)
+
+# Get all ids of guilds that have active streams
+def all_active_guild_ids():
+  return [x for x in server_state.keys() if server_state[x]]
 
 # Getter for state of a guild
 def get_state(guild_id, var=None):
@@ -396,7 +404,7 @@ def get_state(guild_id, var=None):
     return server_state[guild_id]
   # Make sure var is available in guild state
   if var not in server_state[guild_id]:
-    server_state[guild_id][var] = None
+    return None
 
   return server_state[guild_id][var]
 
