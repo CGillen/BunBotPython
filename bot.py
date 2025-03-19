@@ -158,7 +158,7 @@ async def debug(interaction: discord.Interaction):
     resp.append(f"\tCluster ID: {bot.cluster_id}")
     resp.append(f"\tShards: {bot.shard_ids}")
   else:
-    resp.append(f"Guild count: {bot.guilds.count()}")
+    resp.append(f"Guild count: {len(bot.guilds)}")
 
   await interaction.response.send_message("\n".join(resp), ephemeral=True)
 
