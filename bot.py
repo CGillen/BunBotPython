@@ -48,6 +48,7 @@ server_state = {}
 # current_stream_response = http.client.HTTPResponse object from connecting to shoutcast stream
 # metadata_listener = Asyncio task for listening to metadata (monitor_metadata())
 # text_channel = Text channel original play command came from
+# cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
 
 # Set up logging
 logger = logging.getLogger('discord')
@@ -89,11 +90,22 @@ async def on_ready():
   logger.info(f"Cluster ID: {bot.cluster_id}")
 
 
+
+### Custom Checks ###
+async def is_not_cleanup(interaction: discord.Interaction):
+  if get_state(interaction.guild.id, 'cleaning_up'):
+    raise shout_errors.CleaningUp('Bot is still cleaning up from last session')
+  return not get_state(interaction.guild.id, 'cleaning_up')
+
+
+
 @bot.tree.command(
     name='play',
     description="Begin playback of a shoutcast/icecast stream"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.has_permissions(send_messages=True)
+@discord.app_commands.check(is_not_cleanup)
 async def play(interaction: discord.Interaction, url: str):
   if not is_valid_url(url):
     raise commands.BadArgument("🙇 I'm sorry, I don't know what that means!")
@@ -106,6 +118,7 @@ async def play(interaction: discord.Interaction, url: str):
     description="Remove the bot from the current call"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.has_permissions(send_messages=True)
 async def leave(interaction: discord.Interaction):
   voice_client = interaction.guild.voice_client
   if voice_client:
@@ -119,6 +132,7 @@ async def leave(interaction: discord.Interaction):
     description="Send an embed with the current song information to this channel"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.has_permissions(send_messages=True)
 async def song(interaction: discord.Interaction):
   url = get_state(interaction.guild.id, 'current_stream_url')
   if (url):
@@ -132,6 +146,8 @@ async def song(interaction: discord.Interaction):
     description="Refresh the stream. Bot will leave and come back"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.has_permissions(send_messages=True)
+# @discord.app_commands.check(is_not_cleanup)
 async def refresh(interaction: discord.Interaction):
   if (get_state(interaction.guild.id, 'current_stream_url')):
     await interaction.response.send_message("♻️ Refreshing stream, the bot may skip or leave and re-enter")
@@ -144,6 +160,7 @@ async def refresh(interaction: discord.Interaction):
     description="Show debug stats & info"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.has_permissions(send_messages=True)
 async def debug(interaction: discord.Interaction):
   resp = []
   resp.append("==\tGlobal Info\t==")
@@ -194,6 +211,9 @@ async def on_command_error(interaction, error):
   elif isinstance(original_error, discord.app_commands.errors.CommandOnCooldown):
     # Commands are being sent too quickly
     error_message = "🥵 Slow down, I can only handle so much!"
+  elif isinstance(original_error, discord.app_commands.errors.MissingPermissions):
+    # We don't have permission to send messages here
+    error_message = "😶 It looks like this channel isn't configured to let me speak. Please enable Send Messages for me"
   else:
     # General error handler for other errors
     error_message = f"🤷 An unexpected error occurred while processing your command:\n{error}"
@@ -215,15 +235,21 @@ async def send_song_info(guild_id: int):
   channel = get_state(guild_id, 'text_channel')
   stationinfo = get_station_info(url)
 
+  # We need to quite now if we can't send messages
+  guild = bot.get_guild(guild_id)
+  if not channel.permissions_for(guild.me).send_messages:
+    logger.warning("we don't have permission to send the song info!")
+    return False
+
   embed_data = {
     'title': "Now Playing",
     'color': 0x0099ff,
-    'description': f"🎶 {stationinfo["metadata"]["song"]} 🎶",
+    'description': f"🎶 {stationinfo['metadata']['song']} 🎶",
     'timestamp': str(datetime.datetime.now(datetime.UTC)),
   }
   embed = discord.Embed.from_dict(embed_data)
   embed.set_footer(text=f"Source: {url}")
-  await channel.send(embed=embed)
+  return await channel.send(embed=embed)
 
 # Retrieve information about the shoutcast stream
 def get_station_info(url: str):
@@ -316,12 +342,22 @@ async def close_stream_connection(resp: HTTPResponse):
 
 # Disconnect the bot, close the stream, and reset state
 async def stop_playback(guild: discord.Guild):
+  # Let the bot know we're cleaning up and it needs to wait before any more commands are processed
+  set_state(guild.id, 'cleaning_up', True)
+
   voice_client = guild.voice_client
   if voice_client and voice_client.is_playing():
     voice_client.stop()
 
+    while voice_client.is_playing():
+      logger.debug("waiting for client to stop")
+      await asyncio.sleep(1)
+    logger.info("voice client stopped")
+  if voice_client and voice_client.is_connected():
+    voice_client.disconnect()
+
     while voice_client.is_connected():
-      logger.debug("waiting for client to leave")
+      logger.debug("waiting for client to disconnect")
       await asyncio.sleep(1)
     logger.info("voice client disconnected")
 
@@ -330,7 +366,7 @@ async def stop_playback(guild: discord.Guild):
   await close_stream_connection(resp)
   logger.debug("Stream close called")
 
-  # Reset the bot for this guild
+  # Reset the bot for this guild first, then we can do cleanup
   logger.debug(f"Clearing guild state: {get_state(guild.id)}")
   clear_state(guild.id)
   logger.debug(f"Guild state cleared: {get_state(guild.id)}")
@@ -369,8 +405,8 @@ async def monitor_metadata():
             set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
             logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
           elif song != stationinfo['metadata']['song']:
-            await send_song_info(guild_id)
-            set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
+            if await send_song_info(guild_id):
+              set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
             logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
         else:
           logger.warning("Received non-string value from server metadata")
@@ -378,13 +414,19 @@ async def monitor_metadata():
       logger.error(f"[{guild_id}]: The stream went offline: {error}")
       channel = get_state(guild_id, 'text_channel')
       guild = bot.get_guild(guild_id)
-      await channel.send("😰 The stream went offline, I gotta go!")
+      if channel.permissions_for(guild.me).send_messages:
+        await channel.send("😰 The stream went offline, I gotta go!")
+      else:
+        logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
       await stop_playback(guild)
     except Exception as error: # Something went wrong, let's just close it all out
       logger.error(f"[{guild_id}]: Something went wrong while checking stream metadata: {error}")
       channel = get_state(guild_id, 'text_channel')
       guild = bot.get_guild(guild_id)
-      await channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
+      if channel.permissions_for(guild.me).send_messages:
+        await channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
+      else:
+        logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
       await stop_playback(guild)
 
 
