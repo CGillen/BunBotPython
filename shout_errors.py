@@ -8,3 +8,5 @@ class NoVoiceClient(Exception):
   pass
 class AlreadyPlaying(Exception):
   pass
+class CleaningUp(Exception):
+  pass
