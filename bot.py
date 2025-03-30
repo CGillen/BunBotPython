@@ -149,8 +149,9 @@ async def leave(interaction: discord.Interaction):
 async def song(interaction: discord.Interaction):
   url = get_state(interaction.guild.id, 'current_stream_url')
   if (url):
+    await interaction.response.send_message("Fetching song title...")
     stationinfo = get_station_info(url)
-    await interaction.response.send_message(f"Now Playing: 🎶 {stationinfo['metadata']['song']} 🎶")
+    await interaction.edit_original_response(content=f"Now Playing: 🎶 {stationinfo['metadata']['song']} 🎶")
   else:
     raise shout_errors.NoStreamSelected("🔎 None. There's no song playing. Turn the stream on maybe?")
 
