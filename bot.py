@@ -92,20 +92,35 @@ async def on_ready():
 
 
 ### Custom Checks ###
+
+# Verify bot is not cleaning up from a previous session (TODO)
 async def is_not_cleanup(interaction: discord.Interaction):
   if get_state(interaction.guild.id, 'cleaning_up'):
     raise shout_errors.CleaningUp('Bot is still cleaning up from last session')
   return not get_state(interaction.guild.id, 'cleaning_up')
 
-
+# Verify bot permissions in the initiating channel
+def bot_has_channel_permissions(permissions: discord.Permissions):
+    def predicate(interaction: discord.Interaction):
+        # Get current permissions
+        bot_permissions = interaction.channel.permissions_for(interaction.guild.me)
+        # Check if bot_permissions contains all of requested permissions
+        if bot_permissions >= permissions:
+          return True
+        # Figure out which permissions we don't have
+        missing_permissions = dict((bot_permissions | permissions) ^ bot_permissions)
+        # Find which permissions are missing & raise it as an errror
+        missing_permissions = [v for v in missing_permissions.keys() if missing_permissions[v]]
+        raise discord.app_commands.BotMissingPermissions(missing_permissions=missing_permissions)
+    return discord.app_commands.checks.check(predicate)
 
 @bot.tree.command(
     name='play',
     description="Begin playback of a shoutcast/icecast stream"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
-@discord.app_commands.checks.has_permissions(send_messages=True)
-@discord.app_commands.check(is_not_cleanup)
+@bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+# @discord.app_commands.check(is_not_cleanup)
 async def play(interaction: discord.Interaction, url: str):
   if not is_valid_url(url):
     raise commands.BadArgument("🙇 I'm sorry, I don't know what that means!")
@@ -118,7 +133,6 @@ async def play(interaction: discord.Interaction, url: str):
     description="Remove the bot from the current call"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
-@discord.app_commands.checks.has_permissions(send_messages=True)
 async def leave(interaction: discord.Interaction):
   voice_client = interaction.guild.voice_client
   if voice_client:
@@ -132,7 +146,6 @@ async def leave(interaction: discord.Interaction):
     description="Send an embed with the current song information to this channel"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
-@discord.app_commands.checks.has_permissions(send_messages=True)
 async def song(interaction: discord.Interaction):
   url = get_state(interaction.guild.id, 'current_stream_url')
   if (url):
@@ -143,10 +156,10 @@ async def song(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="refresh",
-    description="Refresh the stream. Bot will leave and come back"
+    description="Refresh the stream. Bot will leave and come back. Song updates will start displaying in this channel"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
-@discord.app_commands.checks.has_permissions(send_messages=True)
+@bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 # @discord.app_commands.check(is_not_cleanup)
 async def refresh(interaction: discord.Interaction):
   if (get_state(interaction.guild.id, 'current_stream_url')):
@@ -160,7 +173,6 @@ async def refresh(interaction: discord.Interaction):
     description="Show debug stats & info"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
-@discord.app_commands.checks.has_permissions(send_messages=True)
 async def debug(interaction: discord.Interaction):
   resp = []
   resp.append("==\tGlobal Info\t==")
@@ -182,7 +194,7 @@ async def debug(interaction: discord.Interaction):
 
 
 @bot.tree.error
-async def on_command_error(interaction, error):
+async def on_command_error(interaction: discord.Interaction, error):
   original_error = error.original if hasattr(error, 'original') else error
   error_message=""
   if isinstance(original_error, commands.MissingRequiredArgument):
@@ -211,14 +223,17 @@ async def on_command_error(interaction, error):
   elif isinstance(original_error, discord.app_commands.errors.CommandOnCooldown):
     # Commands are being sent too quickly
     error_message = "🥵 Slow down, I can only handle so much!"
-  elif isinstance(original_error, discord.app_commands.errors.MissingPermissions):
+  elif isinstance(original_error, discord.app_commands.errors.BotMissingPermissions):
     # We don't have permission to send messages here
-    error_message = "😶 It looks like this channel isn't configured to let me speak. Please enable Send Messages for me"
+    error_message = f"😶 It looks like I'm missing permissions for this channel:\n{error}"
   else:
     # General error handler for other errors
     error_message = f"🤷 An unexpected error occurred while processing your command:\n{error}"
   if interaction.response.is_done():
-    await interaction.channel.send(error_message)
+    original_response = await interaction.original_response()
+    original_response_text = original_response.content
+    error_message = original_response_text + f"\n{error_message}"
+    await interaction.edit_original_response(content=error_message)
   else:
     await interaction.response.send_message(error_message)
 
@@ -310,7 +325,7 @@ async def play_stream(interaction, url):
     resp = urllib.request.urlopen(url)
   except Exception as error: # If there was any error connecting let user know and error out
     logger.error(f"Failed to connect to stream: {error}")
-    await interaction.channel.send("Error fetching stream. Maybe the stream is down?")
+    await interaction.edit_original_response(content="Error fetching stream. Maybe the stream is down?")
     return
 
   # Connect client to voice channel
