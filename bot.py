@@ -323,7 +323,7 @@ async def play_stream(interaction, url):
 
   # Try to get an http stream connection to the ... stream
   try:
-    resp = urllib.request.urlopen(url)
+    resp = urllib.request.urlopen(url, timeout=10)
   except Exception as error: # If there was any error connecting let user know and error out
     logger.error(f"Failed to connect to stream: {error}")
     await interaction.edit_original_response(content="Error fetching stream. Maybe the stream is down?")
@@ -346,15 +346,6 @@ async def play_stream(interaction, url):
   # And let the user know what song is playing
   await send_song_info(interaction.guild.id)
 
-# Do our best to clean up the stream connection
-async def close_stream_connection(resp: HTTPResponse):
-  logger.info("Closing stream")
-  if resp:
-    try:
-      resp.close()
-    except Exception as e:
-      logger.warning(f"Failed closing stream: #{e}")
-  logger.info("resp closed")
 
 # Disconnect the bot, close the stream, and reset state
 async def stop_playback(guild: discord.Guild):
@@ -363,24 +354,17 @@ async def stop_playback(guild: discord.Guild):
 
   voice_client = guild.voice_client
   if voice_client and voice_client.is_playing():
-    voice_client.stop()
-
     while voice_client.is_playing():
-      logger.debug("waiting for client to stop")
+      voice_client.stop()
+      logger.debug("Attempting to stop client")
       await asyncio.sleep(1)
     logger.info("voice client stopped")
   if voice_client and voice_client.is_connected():
-    voice_client.disconnect()
-
     while voice_client.is_connected():
-      logger.debug("waiting for client to disconnect")
+      await voice_client.disconnect()
+      logger.debug("Attempting to disconnect client")
       await asyncio.sleep(1)
     logger.info("voice client disconnected")
-
-  logger.debug("Call stream close")
-  resp = get_state(guild.id, 'current_stream_response')
-  await close_stream_connection(resp)
-  logger.debug("Stream close called")
 
   # Reset the bot for this guild first, then we can do cleanup
   logger.debug(f"Clearing guild state: {get_state(guild.id)}")
