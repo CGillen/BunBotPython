@@ -374,60 +374,63 @@ async def stop_playback(guild: discord.Guild):
 
 @tasks.loop(seconds = 15)
 async def monitor_metadata():
-  logger.debug(f"Checking metadata for all streams")
-  active_guild_ids = all_active_guild_ids()
-  for guild_id in active_guild_ids:
-    logger.info(f"[{guild_id}]: Checking metadata")
+  try:
+    logger.debug(f"Checking metadata for all streams")
+    active_guild_ids = all_active_guild_ids()
+    for guild_id in active_guild_ids:
+      logger.info(f"[{guild_id}]: Checking metadata")
 
-    try:
-      logger.debug(f"[{guild_id}]: {get_state(guild_id)}")
-      song = get_state(guild_id, 'current_song')
-      url = get_state(guild_id, 'current_stream_url')
+      try:
+        logger.debug(f"[{guild_id}]: {get_state(guild_id)}")
+        song = get_state(guild_id, 'current_song')
+        url = get_state(guild_id, 'current_stream_url')
 
-      if url is None:
-        logger.warning("Metadata monitor does not have enough information to check")
-        continue
+        if url is None:
+          logger.warning("Metadata monitor does not have enough information to check")
+          continue
 
-      stationinfo = streamscrobbler.get_server_info(url)
-      if stationinfo is None:
-        logger.warning(f"[{guild_id}]: Streamscrobbler returned info as None")
-      elif stationinfo['status'] <= 0:
-        logger.info(f"[{guild_id}]: Stream ended, disconnecting stream")
-        logger.debug(stationinfo)
-        raise shout_errors.StreamOffline(f"[{guild_id}]: Stream is offline")
-      elif stationinfo['metadata'] is None:
-        logger.warning(f"[{guild_id}]: Streamscrobbler returned metadata as None from server")
-      else:
-        # Check if the song has changed & announce the new one
-        if isinstance(stationinfo['metadata']['song'], str):
-          logger.info(f"[{guild_id}]: {stationinfo}")
-          if song is None:
-            set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
-            logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
-          elif song != stationinfo['metadata']['song']:
-            if await send_song_info(guild_id):
-              set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
-            logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
+        stationinfo = streamscrobbler.get_server_info(url)
+        if stationinfo is None:
+          logger.warning(f"[{guild_id}]: Streamscrobbler returned info as None")
+        elif stationinfo['status'] <= 0:
+          logger.info(f"[{guild_id}]: Stream ended, disconnecting stream")
+          logger.debug(stationinfo)
+          raise shout_errors.StreamOffline(f"[{guild_id}]: Stream is offline")
+        elif stationinfo['metadata'] is None:
+          logger.warning(f"[{guild_id}]: Streamscrobbler returned metadata as None from server")
         else:
-          logger.warning("Received non-string value from server metadata")
-    except shout_errors.StreamOffline as error: # Stream went offline gracefully
-      logger.error(f"[{guild_id}]: The stream went offline: {error}")
-      channel = get_state(guild_id, 'text_channel')
-      guild = bot.get_guild(guild_id)
-      if channel.permissions_for(guild.me).send_messages:
-        await channel.send("😰 The stream went offline, I gotta go!")
-      else:
-        logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
-      await stop_playback(guild)
-    except Exception as error: # Something went wrong, let's just close it all out
-      logger.error(f"[{guild_id}]: Something went wrong while checking stream metadata: {error}")
-      channel = get_state(guild_id, 'text_channel')
-      guild = bot.get_guild(guild_id)
-      if channel.permissions_for(guild.me).send_messages:
-        await channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
-      else:
-        logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
-      await stop_playback(guild)
+          # Check if the song has changed & announce the new one
+          if isinstance(stationinfo['metadata']['song'], str):
+            logger.info(f"[{guild_id}]: {stationinfo}")
+            if song is None:
+              set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
+              logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
+            elif song != stationinfo['metadata']['song']:
+              if await send_song_info(guild_id):
+                set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
+              logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
+          else:
+            logger.warning("Received non-string value from server metadata")
+      except shout_errors.StreamOffline as error: # Stream went offline gracefully
+        logger.error(f"[{guild_id}]: The stream went offline: {error}")
+        channel = get_state(guild_id, 'text_channel')
+        guild = bot.get_guild(guild_id)
+        if channel.permissions_for(guild.me).send_messages:
+          await channel.send("😰 The stream went offline, I gotta go!")
+        else:
+          logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
+        await stop_playback(guild)
+      except Exception as error: # Something went wrong, let's just close it all out
+        logger.error(f"[{guild_id}]: Something went wrong while checking stream metadata: {error}")
+        channel = get_state(guild_id, 'text_channel')
+        guild = bot.get_guild(guild_id)
+        if channel.permissions_for(guild.me).send_messages:
+          await channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
+        else:
+          logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
+        await stop_playback(guild)
+  except Exception as e:
+    logger.error(f"An unhandled error occurred in the metadata listener: {e}")
 
 
 # Get all ids of guilds that have active streams
