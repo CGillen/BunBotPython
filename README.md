@@ -7,6 +7,7 @@ It's designed to play Shoutcast and some Icecast streams. It supports the follow
 - `/leave`: Leave the voice channel.
 - `/refresh`: Refresh the stream list.
 - `/song`: Display the current song playing.
+- `/support`: Learn where you can get help with the bot or how to help.
 
 
 # Don't want to self-host?
