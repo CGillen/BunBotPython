@@ -170,6 +170,38 @@ async def refresh(interaction: discord.Interaction):
     raise shout_errors.NoStreamSelected
 
 @bot.tree.command(
+    name='support',
+    description="Information on how to get support"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+async def support(interaction: discord.Interaction):
+  embed_data = {
+    'title': "BunBot Support",
+    'color': 0xF0E9DE,
+    'description': f"""
+      ❔ Got a question?
+         Join us at https://discord.gg/ksZbX723Jn
+         The team is always happy to help
+
+      ⚠️ Found an issue?
+         Please consider creating a ticket at
+         https://github.com/CGillen/BunBotPython/issues
+         We'll appreciate it
+
+      🛠️ Or contribute your own fix!
+         BunBot is completely open source and free to use under the GPLv3 license
+         Just remember to give us a shoutout
+
+      📜 ToS: https://github.com/CGillen/BunBotPython/blob/main/COPYING
+
+      🫶 Like what we're doing?
+         Support us on Ko-Fi: https://ko-fi.com/bunbot
+    """,
+  }
+  embed = discord.Embed.from_dict(embed_data)
+  await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(
     name="debug",
     description="Show debug stats & info"
 )
