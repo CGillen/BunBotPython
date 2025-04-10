@@ -225,7 +225,15 @@ async def debug(interaction: discord.Interaction):
     resp.append(f"\tCluster ID: {bot.cluster_id}")
     resp.append(f"\tShards: {bot.shard_ids}")
   else:
-    resp.append(f"Guild count: {len(bot.guilds)}")
+    resp.append(f"\tGuild count: {len(bot.guilds)}")
+
+  start_time = get_state(interaction.guild.id, 'start_time')
+
+  resp.append("==\tServer Info\t==")
+  resp.append(f"\tStream URL: {get_state(interaction.guild.id, 'current_stream_url') or "Not Playing"}")
+  resp.append(f"\tCurrent song: {get_state(interaction.guild.id, 'current_song') or "Not Playing"}")
+  if start_time:
+    resp.append(f"\tRun time: {datetime.datetime.now(datetime.UTC) - start_time}")
 
   await interaction.response.send_message("\n".join(resp), ephemeral=True)
 
