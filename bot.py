@@ -48,6 +48,7 @@ server_state = {}
 # current_stream_response = http.client.HTTPResponse object from connecting to shoutcast stream
 # metadata_listener = Asyncio task for listening to metadata (monitor_metadata())
 # text_channel = Text channel original play command came from
+# start_time = Time the current stream started playing
 # cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
 
 # Set up logging
@@ -213,8 +214,12 @@ async def debug(interaction: discord.Interaction):
   if (await bot.is_owner(interaction.user)):
     resp.append("Guilds:")
     for guild in bot.guilds:
+      start_time = get_state(guild.id, 'start_time')
+
       resp.append(f"- {guild.name} ({guild.id}): user count - {guild.member_count}")
       resp.append(f"\tState: {get_state(guild.id)}")
+      if start_time:
+        resp.append(f"\tRun time: {datetime.datetime.now(datetime.UTC) - start_time}")
       resp.append(f"\tShard: {guild.shard_id}")
     resp.append("Bot:")
     resp.append(f"\tCluster ID: {bot.cluster_id}")
@@ -374,6 +379,7 @@ async def play_stream(interaction, url):
   set_state(interaction.guild.id, 'current_stream_url', url)
   set_state(interaction.guild.id, 'current_stream_response', resp)
   set_state(interaction.guild.id, 'text_channel', interaction.channel)
+  set_state(interaction.guild.id, 'start_time', datetime.datetime.now(datetime.UTC))
 
   # And let the user know what song is playing
   await send_song_info(interaction.guild.id)
