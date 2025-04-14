@@ -21,6 +21,7 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 # So what's new?
 - `Implemented Shoutcast v1! 🎉`
 - `Support embed added!🎉`
+- `Added some checks for permissions or lack thereof`
 - `Added better handling for ~slower~ servers`
 - `Added some damage control if Discord were to drop the connection suddenly`
 - `Handles things better if the listening server were to crash suddenly`
@@ -31,4 +32,4 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 - `Changed audio receiver library to Discord integrated`
 - `Migrated to Python!`
 - `Hac-I mean added ICY support into urllib.py`
-- `Squashed bugs`
+- `6 Bugs Squashed! 🎉`
