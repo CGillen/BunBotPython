@@ -20,10 +20,15 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 
 # So what's new?
 - `Implemented Shoutcast v1! 🎉`
+- `Support embed added!🎉`
+- `Added better handling for ~slower~ servers`
+- `Added some damage control if Discord were to drop the connection suddenly`
+- `Handles things better if the listening server were to crash suddenly`
 - `Volume normalization`
-- `More robust-er error handling`
-- `uses slash commands now!`
-- `changed audio receiver library to discord integrated`
-- `migrated to python!`
-- `hac-I mean added ICY support into urllib.py`
-- `various bugfixes`
+- `More robust-er-er error handling`
+- `Slash commands`
+- `Better streamscrobbler for that sweet sweet metadata!`
+- `Changed audio receiver library to Discord integrated`
+- `Migrated to Python!`
+- `Hac-I mean added ICY support into urllib.py`
+- `Squashed bugs`
