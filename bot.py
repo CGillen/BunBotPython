@@ -154,7 +154,10 @@ async def song(interaction: discord.Interaction):
   if (url):
     await interaction.response.send_message("Fetching song title...")
     stationinfo = get_station_info(url)
-    await interaction.edit_original_response(content=f"Now Playing: 🎶 {stationinfo['metadata']['song']} 🎶")
+    if stationinfo['metadata']:
+      await interaction.edit_original_response(content=f"Now Playing: 🎶 {stationinfo['metadata']['song']} 🎶")
+    else:
+      await interaction.edit_original_response(content=f"Could not retrieve song title. This feature may not be supported by the station")
   else:
     raise shout_errors.NoStreamSelected("🔎 None. There's no song playing. Turn the stream on maybe?")
 
@@ -315,6 +318,10 @@ async def send_song_info(guild_id: int):
   channel = get_state(guild_id, 'text_channel')
   stationinfo = get_station_info(url)
 
+  if not stationinfo['metadata']:
+    logger.warning("We didn't get metadata back from the station, can't send the station info")
+    return
+
   # We need to quite now if we can't send messages
   guild = bot.get_guild(guild_id)
   if not channel.permissions_for(guild.me).send_messages:
@@ -461,7 +468,7 @@ async def monitor_metadata():
           logger.info(f"[{guild_id}]: Stream ended, disconnecting stream")
           logger.debug(stationinfo)
           raise shout_errors.StreamOffline(f"[{guild_id}]: Stream is offline")
-        elif stationinfo['metadata'] is None:
+        elif stationinfo['metadata'] is None or stationinfo['metadata'] is False:
           logger.warning(f"[{guild_id}]: Streamscrobbler returned metadata as None from server")
         else:
           # Check if the song has changed & announce the new one
