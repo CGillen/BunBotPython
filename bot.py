@@ -237,7 +237,7 @@ async def debug(interaction: discord.Interaction, page: int = 0, id: str = ''):
         start_time = get_state(guild.id, 'start_time')
 
         resp.append(f"- {guild.name} ({guild.id}): user count - {guild.member_count}")
-        resp.append(f"\tStatus: {get_state(interaction.guild.id, 'current_stream_url') or "Not Playing"}")
+        resp.append(f"\tStatus: {get_state(guild.id, 'current_stream_url') or "Not Playing"}")
       resp.append(f"Total pages: {page_count}")
       resp.append(f"Current page: {math.floor(page_count/50) + 1}")
     resp.append("Bot:")
