@@ -87,7 +87,7 @@ async def on_ready():
   logger.info("Syncing slash commands")
   await bot.tree.sync()
   monitor_metadata.start()
-  safety_checks.start()
+  # safety_checks.start()
   logger.info(f"Logged on as {bot.user}")
   logger.info(f"Shard IDS: {bot.shard_ids}")
   logger.info(f"Cluster ID: {bot.cluster_id}")
@@ -398,7 +398,7 @@ async def play_stream(interaction, url):
     voice_client = await voice_channel.connect()
 
   # Pipe music stream to FFMpeg
-  music_stream = discord.FFmpegPCMAudio(resp, pipe=True, options="-filter:a loudnorm=I=-36:LRA=4:TP=-4")
+  music_stream = discord.FFmpegPCMAudio(resp, pipe=True, options="-filter:a loudnorm=I=-30:LRA=4:TP=-2")
   # voice_client.play(music_stream)
   voice_client.play(music_stream, after=lambda e: asyncio.run_coroutine_threadsafe(voice_client.disconnect(), bot.loop))
 
