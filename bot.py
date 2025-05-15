@@ -1,5 +1,6 @@
 from http.client import HTTPResponse
 import math
+import ssl
 import discord
 from discord.ext import commands, tasks
 import asyncio
@@ -18,6 +19,9 @@ load_dotenv()  # take environment variables from .env.
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 LOG_FILE_PATH = Path(os.getenv('LOG_FILE_PATH', './')).joinpath('log.txt')
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
+
+# TLS VERIFY
+TLS_VERIFY = bool(os.environ.get('TLS_VERIFY', True))
 
 # CLUSETERING INFORMATION
 CLUSTER_ID = int(os.environ.get('CLUSTER_ID', 0))
@@ -394,7 +398,16 @@ async def play_stream(interaction, url):
 
   # Try to get an http stream connection to the ... stream
   try:
-    resp = urllib.request.urlopen(url, timeout=10)
+    logger.debug("Checking if TLS Verification")
+    logger.debug(f"TLS_VERIFY: {TLS_VERIFY}")
+    if not TLS_VERIFY:
+      logger.debug("Skipping TLS Verification")
+      ctx = ssl._create_unverified_context()
+      ctx.set_ciphers('DEFAULT:@SECLEVEL=1')
+    else:
+      ctx = ssl.create_default_context()
+
+    resp = urllib.request.urlopen(url, context=ctx, timeout=10)
   except Exception as error: # If there was any error connecting let user know and error out
     logger.error(f"Failed to connect to stream: {error}")
     await interaction.edit_original_response(content="Error fetching stream. Maybe the stream is down?")
