@@ -1,5 +1,6 @@
 import urllib.request
 import http
+import ssl
 
 class IcylessHTTPResponse(http.client.HTTPResponse):
   # OVERRIDE _read_status to convert ICY status code to HTTP/1.0
@@ -39,15 +40,19 @@ class IcylessHTTPResponse(http.client.HTTPResponse):
       raise http.client.BadStatusLine(line)
     return version, status, reason
 
-class IcylessHTTPConnection(http.client.HTTPConnection):
+class IcylessHTTPConnection(http.client.HTTPSConnection):
   response_class = IcylessHTTPResponse
 
-class IcylessHTTPHandler(urllib.request.HTTPHandler):
+class IcylessHTTPHandler(urllib.request.HTTPSHandler):
   def http_open(self, req):
     return self.do_open(IcylessHTTPConnection, req)
 
-def init_urllib_hack():
+def init_urllib_hack(tls_verify: bool):
   # Create an opener with the custom handler
-  opener = urllib.request.build_opener(IcylessHTTPHandler(), urllib.request.HTTPHandler)
+  # Skip TLS verification if set. Python doesn't like the certs some shoutcast streams present
+  ctx = ssl._create_unverified_context()
+  if not tls_verify:
+    ctx.set_ciphers('DEFAULT:@SECLEVEL=1')
+  opener = urllib.request.build_opener(IcylessHTTPHandler(context=ctx), urllib.request.HTTPHandler)
   # Install opener as default opener
   urllib.request.install_opener(opener)
