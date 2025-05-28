@@ -86,7 +86,7 @@ logger.addHandler(file_handler)
 @bot.event
 async def on_ready():
   # Initialize a hack for urllib that replaces `ICY 200 OK` as the status line with `HTTP/1.0 200 OK`
-  urllib_hack.init_urllib_hack()
+  urllib_hack.init_urllib_hack(TLS_VERIFY)
 
   logger.info("Syncing slash commands")
   await bot.tree.sync()
@@ -398,16 +398,8 @@ async def play_stream(interaction, url):
 
   # Try to get an http stream connection to the ... stream
   try:
-    logger.debug("Checking if TLS Verification")
-    logger.debug(f"TLS_VERIFY: {TLS_VERIFY}")
-    if not TLS_VERIFY:
-      logger.debug("Skipping TLS Verification")
-      ctx = ssl._create_unverified_context()
-      ctx.set_ciphers('DEFAULT:@SECLEVEL=1')
-    else:
-      ctx = ssl.create_default_context()
+    resp = urllib.request.urlopen(url, timeout=10)
 
-    resp = urllib.request.urlopen(url, context=ctx, timeout=10)
   except Exception as error: # If there was any error connecting let user know and error out
     logger.error(f"Failed to connect to stream: {error}")
     await interaction.edit_original_response(content="Error fetching stream. Maybe the stream is down?")
