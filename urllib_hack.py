@@ -53,6 +53,6 @@ def init_urllib_hack(tls_verify: bool):
   ctx = ssl._create_unverified_context()
   if not tls_verify:
     ctx.set_ciphers('DEFAULT:@SECLEVEL=1')
-  opener = urllib.request.build_opener(IcylessHTTPHandler(context=ctx), urllib.request.HTTPHandler)
+  opener = urllib.request.build_opener(IcylessHTTPHandler(context=ctx), urllib.request.HTTPSHandler)
   # Install opener as default opener
   urllib.request.install_opener(opener)
