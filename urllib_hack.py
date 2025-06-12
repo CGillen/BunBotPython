@@ -40,6 +40,7 @@ class IcylessHTTPResponse(http.client.HTTPResponse):
       raise http.client.BadStatusLine(line)
     return version, status, reason
 
+# HTTP(S) Handler code by Harp0030 on GH
 # HTTP Connection (for plain HTTP URLs)
 class IcylessHTTPConnection(http.client.HTTPConnection):
   response_class = IcylessHTTPResponse
