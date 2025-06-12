@@ -40,19 +40,36 @@ class IcylessHTTPResponse(http.client.HTTPResponse):
       raise http.client.BadStatusLine(line)
     return version, status, reason
 
-class IcylessHTTPConnection(http.client.HTTPSConnection):
+# HTTP(S) Handler code by Harp0030 on GH
+# HTTP Connection (for plain HTTP URLs)
+class IcylessHTTPConnection(http.client.HTTPConnection):
   response_class = IcylessHTTPResponse
 
-class IcylessHTTPHandler(urllib.request.HTTPSHandler):
+# HTTPS Connection (for HTTPS URLs)
+class IcylessHTTPSConnection(http.client.HTTPSConnection):
+  response_class = IcylessHTTPResponse
+
+# HTTP Handler (for plain HTTP URLs)
+class IcylessHTTPHandler(urllib.request.HTTPHandler):
   def http_open(self, req):
     return self.do_open(IcylessHTTPConnection, req)
 
+# HTTPS Handler (for HTTPS URLs)
+class IcylessHTTPSHandler(urllib.request.HTTPSHandler):
+  def https_open(self, req):
+    return self.do_open(IcylessHTTPSConnection, req)
+
 def init_urllib_hack(tls_verify: bool):
-  # Create an opener with the custom handler
-  # Skip TLS verification if set. Python doesn't like the certs some shoutcast streams present
+  # Create SSL context for HTTPS connections
   ctx = ssl._create_unverified_context()
   if not tls_verify:
     ctx.set_ciphers('DEFAULT:@SECLEVEL=1')
-  opener = urllib.request.build_opener(IcylessHTTPHandler(context=ctx), urllib.request.HTTPSHandler)
+
+  # Create an opener with both HTTP and HTTPS handlers
+  opener = urllib.request.build_opener(
+    IcylessHTTPHandler(),              # For HTTP URLs
+    IcylessHTTPSHandler(context=ctx)   # For HTTPS URLs
+  )
+
   # Install opener as default opener
   urllib.request.install_opener(opener)
