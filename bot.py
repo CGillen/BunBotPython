@@ -216,13 +216,13 @@ async def support(interaction: discord.Interaction):
     description="Show debug stats & info"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
-async def debug(interaction: discord.Interaction, page: int = 0, id: str = ''):
+async def debug(interaction: discord.Interaction, page: int = 0, per_page: int = 10, id: str = ''):
   resp = []
   resp.append("==\tGlobal Info\t==")
-  page_count = math.ceil(len(bot.guilds) / 50)
+  page_count = math.ceil(len(bot.guilds) / per_page)
   page = max(0, page-1)
   page = min(page, page_count-1)
-  page_index = page * 50
+  page_index = page * per_page
 
   if (await bot.is_owner(interaction.user)):
     if id:
@@ -240,13 +240,13 @@ async def debug(interaction: discord.Interaction, page: int = 0, id: str = ''):
 
     else:
       resp.append("Guilds:")
-      for guild in bot.guilds[page_index:page_index+50]:
+      for guild in bot.guilds[page_index:page_index+per_page]:
         start_time = get_state(guild.id, 'start_time')
 
         resp.append(f"- {guild.name} ({guild.id}): user count - {guild.member_count}")
         resp.append(f"\tStatus: {get_state(guild.id, 'current_stream_url') or "Not Playing"}")
       resp.append(f"Total pages: {page_count}")
-      resp.append(f"Current page: {math.floor(page_count/50) + 1}")
+      resp.append(f"Current page: {math.floor(page_count/per_page) + 1}")
     resp.append("Bot:")
     resp.append(f"\tCluster ID: {bot.cluster_id}")
     resp.append(f"\tShards: {bot.shard_ids}")
