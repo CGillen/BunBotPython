@@ -146,13 +146,35 @@ async def play(interaction: discord.Interaction, url: str):
     description="Remove the bot from the current call"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
-async def leave(interaction: discord.Interaction):
+async def leave(interaction: discord.Interaction, force: bool = False):
   voice_client = interaction.guild.voice_client
+  has_state = bool(get_state(interaction.guild.id, 'current_stream_url'))
+  
+  # Handle normal case - voice client exists
   if voice_client:
     await interaction.response.send_message("👋 Seeya Later, Gator!")
     await stop_playback(interaction.guild)
-  else:
-    raise shout_errors.NoVoiceClient("😨 I'm not even playing any music! You don't have to be so mean")
+    return
+  
+  # Handle desync case - AUTOMATIC RECOVERY
+  if has_state:
+    if force:
+      await interaction.response.send_message("🔧 Force clearing stale state...")
+    else:
+      await interaction.response.send_message("🔄 Detected state desync - automatically recovering...")
+    
+    # Automatically clear stale state
+    clear_state(interaction.guild.id)
+    logger.info(f"[{interaction.guild.id}]: Auto-recovered from state desync via /leave")
+    
+    if force:
+      await interaction.edit_original_response(content="✅ Force cleared stale bot state. Ready for new streams!")
+    else:
+      await interaction.edit_original_response(content="✅ Auto-recovered from state issue. Ready for new streams!")
+    return
+  
+  # Normal case - nothing playing
+  raise shout_errors.NoVoiceClient("😨 I'm not even playing any music! You don't have to be so mean")
 
 @bot.tree.command(
     name="song",
@@ -600,6 +622,43 @@ def get_station_info(url: str):
 
   return stationinfo
 
+# Handle stream disconnect with proper state cleanup
+async def handle_stream_disconnect(guild: discord.Guild):
+  """Handle stream disconnection and clean up state properly"""
+  try:
+    logger.info(f"[{guild.id}]: Handling stream disconnect")
+    
+    # Get current state before clearing
+    channel = get_state(guild.id, 'text_channel')
+    
+    # Notify users if possible
+    if channel:
+      try:
+        # Check if we have permission to send messages
+        if channel.permissions_for(guild.me).send_messages:
+          await channel.send("🔌 Stream disconnected. Use `/play` to start a new stream!")
+      except Exception as e:
+        logger.warning(f"[{guild.id}]: Could not send disconnect notification: {e}")
+    
+    # Ensure voice client is properly disconnected
+    voice_client = guild.voice_client
+    if voice_client:
+      try:
+        if voice_client.is_connected():
+          await voice_client.disconnect()
+          logger.info(f"[{guild.id}]: Voice client disconnected")
+      except Exception as e:
+        logger.warning(f"[{guild.id}]: Error disconnecting voice client: {e}")
+    
+    # Clear all state for this guild
+    clear_state(guild.id)
+    logger.info(f"[{guild.id}]: State cleared after disconnect")
+    
+  except Exception as e:
+    logger.error(f"[{guild.id}]: Error in handle_stream_disconnect: {e}")
+    # Ensure state is cleared even if other operations fail
+    clear_state(guild.id)
+
 # Resync the stream by leaving and coming back
 async def refresh_stream(interaction: discord.Interaction):
   url = get_state(interaction.guild.id, 'current_stream_url')
@@ -656,8 +715,18 @@ async def play_stream(interaction, url):
 
   # Pipe music stream to FFMpeg
   music_stream = discord.FFmpegPCMAudio(resp, pipe=True, options="-filter:a loudnorm=I=-30:LRA=4:TP=-2")
-  # voice_client.play(music_stream)
-  voice_client.play(music_stream, after=lambda e: asyncio.run_coroutine_threadsafe(voice_client.disconnect(), bot.loop))
+  
+  # Create proper cleanup callback that handles state
+  def stream_finished_callback(error):
+    if error:
+      logger.error(f"Stream finished with error: {error}")
+    else:
+      logger.info("Stream finished normally")
+    
+    # Schedule proper cleanup with state management
+    asyncio.run_coroutine_threadsafe(handle_stream_disconnect(interaction.guild), bot.loop)
+  
+  voice_client.play(music_stream, after=stream_finished_callback)
 
   # Everything was successful, lets keep all the data
   set_state(interaction.guild.id, 'current_stream_url', url)
@@ -755,9 +824,22 @@ async def monitor_metadata():
     logger.error(f"An unhandled error occurred in the metadata listener: {e}")
 
 
-# Get all ids of guilds that have active streams
+# Get all ids of guilds that have active streams and valid voice clients
 def all_active_guild_ids():
-  return [x for x in server_state.keys() if server_state[x]]
+  active_ids = []
+  for guild_id in server_state.keys():
+    if not server_state[guild_id]:  # Skip empty state
+      continue
+    
+    # Validate that voice client actually exists and is connected
+    guild = bot.get_guild(guild_id)
+    if guild and guild.voice_client and guild.voice_client.is_connected():
+      active_ids.append(guild_id)
+    elif server_state[guild_id]:  # State exists but no valid voice client
+      logger.warning(f"[{guild_id}]: State exists but no voice client - cleaning up stale state")
+      clear_state(guild_id)  # Clean up stale state
+  
+  return active_ids
 
 # Getter for state of a guild
 def get_state(guild_id, var=None):
