@@ -5,3 +5,5 @@ venv
 bot.js
 log*
 .vscode
+.history
+.db

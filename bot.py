@@ -13,6 +13,12 @@ import urllib_hack
 from dotenv import load_dotenv
 from pathlib import Path
 from streamscrobbler import streamscrobbler
+from database import get_database
+from favorites_manager import get_favorites_manager
+from permissions import get_permission_manager, can_set_favorites_check, can_remove_favorites_check, can_manage_roles_check
+from stream_validator import get_stream_validator
+from input_validator import get_input_validator
+from ui_components import FavoritesView, create_favorites_embed, create_favorites_list_embed, create_role_setup_embed, ConfirmationView
 
 load_dotenv()  # take environment variables from .env.
 
@@ -140,13 +146,35 @@ async def play(interaction: discord.Interaction, url: str):
     description="Remove the bot from the current call"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
-async def leave(interaction: discord.Interaction):
+async def leave(interaction: discord.Interaction, force: bool = False):
   voice_client = interaction.guild.voice_client
+  has_state = bool(get_state(interaction.guild.id, 'current_stream_url'))
+  
+  # Handle normal case - voice client exists
   if voice_client:
     await interaction.response.send_message("👋 Seeya Later, Gator!")
     await stop_playback(interaction.guild)
-  else:
-    raise shout_errors.NoVoiceClient("😨 I'm not even playing any music! You don't have to be so mean")
+    return
+  
+  # Handle desync case - AUTOMATIC RECOVERY
+  if has_state:
+    if force:
+      await interaction.response.send_message("🔧 Force clearing stale state...")
+    else:
+      await interaction.response.send_message("🔄 Detected state desync - automatically recovering...")
+    
+    # Automatically clear stale state
+    clear_state(interaction.guild.id)
+    logger.info(f"[{interaction.guild.id}]: Auto-recovered from state desync via /leave")
+    
+    if force:
+      await interaction.edit_original_response(content="✅ Force cleared stale bot state. Ready for new streams!")
+    else:
+      await interaction.edit_original_response(content="✅ Auto-recovered from state issue. Ready for new streams!")
+    return
+  
+  # Normal case - nothing playing
+  raise shout_errors.NoVoiceClient("😨 I'm not even playing any music! You don't have to be so mean")
 
 @bot.tree.command(
     name="song",
@@ -263,7 +291,246 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
 
   await interaction.response.send_message("\n".join(resp), ephemeral=True)
 
+### FAVORITES COMMANDS ###
 
+@bot.tree.command(
+    name='set-favorite',
+    description="Add a radio station to favorites"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+async def set_favorite(interaction: discord.Interaction, url: str, name: str = None):
+  # Check permissions
+  perm_manager = get_permission_manager()
+  if not perm_manager.can_set_favorites(interaction.guild.id, interaction.user):
+    await interaction.response.send_message(
+      "❌ You don't have permission to set favorites. Ask an admin to assign you the appropriate role.",
+      ephemeral=True
+    )
+    return
+  
+  # Validate URL format first
+  if not is_valid_url(url):
+    await interaction.response.send_message("❌ Please provide a valid URL.", ephemeral=True)
+    return
+  
+  await interaction.response.send_message("🔍 Validating stream and adding to favorites...")
+  
+  try:
+    favorites_manager = get_favorites_manager()
+    result = favorites_manager.add_favorite(
+      guild_id=interaction.guild.id,
+      url=url,
+      name=name,
+      user_id=interaction.user.id
+    )
+    
+    if result['success']:
+      await interaction.edit_original_response(
+        content=f"✅ Added **{result['station_name']}** as favorite #{result['favorite_number']}"
+      )
+    else:
+      await interaction.edit_original_response(
+        content=f"❌ Failed to add favorite: {result['error']}"
+      )
+      
+  except Exception as e:
+    logger.error(f"Error in set_favorite command: {e}")
+    await interaction.edit_original_response(
+      content="❌ An unexpected error occurred while adding the favorite."
+    )
+
+@bot.tree.command(
+    name='play-favorite',
+    description="Play a favorite radio station by number"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+async def play_favorite(interaction: discord.Interaction, number: int):
+  try:
+    favorites_manager = get_favorites_manager()
+    favorite = favorites_manager.get_favorite_by_number(interaction.guild.id, number)
+    
+    if not favorite:
+      await interaction.response.send_message(f"❌ Favorite #{number} not found.", ephemeral=True)
+      return
+    
+    await interaction.response.send_message(
+      f"🎵 Starting favorite #{number}: **{favorite['station_name']}**"
+    )
+    await play_stream(interaction, favorite['stream_url'])
+    
+  except Exception as e:
+    logger.error(f"Error in play_favorite command: {e}")
+    if interaction.response.is_done():
+      await interaction.followup.send("❌ An error occurred while playing the favorite.", ephemeral=True)
+    else:
+      await interaction.response.send_message("❌ An error occurred while playing the favorite.", ephemeral=True)
+
+@bot.tree.command(
+    name='favorites',
+    description="Show favorites with clickable buttons"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=10)
+async def favorites(interaction: discord.Interaction):
+  try:
+    favorites_manager = get_favorites_manager()
+    favorites_list = favorites_manager.get_favorites(interaction.guild.id)
+    
+    if not favorites_list:
+      await interaction.response.send_message(
+        "📻 No favorites set for this server yet! Use `/set-favorite` to add some.",
+        ephemeral=True
+      )
+      return
+    
+    # Create embed and view with buttons
+    embed = create_favorites_embed(favorites_list, 0, interaction.guild.name)
+    view = FavoritesView(favorites_list, 0)
+    
+    await interaction.response.send_message(embed=embed, view=view)
+    
+  except Exception as e:
+    logger.error(f"Error in favorites command: {e}")
+    await interaction.response.send_message("❌ An error occurred while loading favorites.", ephemeral=True)
+
+@bot.tree.command(
+    name='list-favorites',
+    description="List all favorites (text only, mobile-friendly)"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+async def list_favorites(interaction: discord.Interaction):
+  try:
+    favorites_manager = get_favorites_manager()
+    favorites_list = favorites_manager.get_favorites(interaction.guild.id)
+    
+    embed = create_favorites_list_embed(favorites_list, interaction.guild.name)
+    await interaction.response.send_message(embed=embed)
+    
+  except Exception as e:
+    logger.error(f"Error in list_favorites command: {e}")
+    await interaction.response.send_message("❌ An error occurred while listing favorites.", ephemeral=True)
+
+@bot.tree.command(
+    name='remove-favorite',
+    description="Remove a favorite radio station"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+async def remove_favorite(interaction: discord.Interaction, number: int):
+  # Check permissions
+  perm_manager = get_permission_manager()
+  if not perm_manager.can_remove_favorites(interaction.guild.id, interaction.user):
+    await interaction.response.send_message(
+      "❌ You don't have permission to remove favorites. Ask an admin to assign you the appropriate role.",
+      ephemeral=True
+    )
+    return
+  
+  try:
+    favorites_manager = get_favorites_manager()
+    
+    # Check if favorite exists first
+    favorite = favorites_manager.get_favorite_by_number(interaction.guild.id, number)
+    if not favorite:
+      await interaction.response.send_message(f"❌ Favorite #{number} not found.", ephemeral=True)
+      return
+    
+    # Create confirmation view
+    view = ConfirmationView("remove", f"favorite #{number}: {favorite['station_name']}")
+    await interaction.response.send_message(
+      f"⚠️ Are you sure you want to remove favorite #{number}: **{favorite['station_name']}**?\n"
+      f"This will reorder all subsequent favorites.",
+      view=view
+    )
+    
+    # Wait for confirmation
+    await view.wait()
+    
+    if view.confirmed:
+      result = favorites_manager.remove_favorite(interaction.guild.id, number)
+      if result['success']:
+        await interaction.followup.send(
+          f"✅ Removed **{result['station_name']}** from favorites. Subsequent favorites have been renumbered."
+        )
+      else:
+        await interaction.followup.send(f"❌ Failed to remove favorite: {result['error']}")
+    
+  except Exception as e:
+    logger.error(f"Error in remove_favorite command: {e}")
+    if interaction.response.is_done():
+      await interaction.followup.send("❌ An error occurred while removing the favorite.", ephemeral=True)
+    else:
+      await interaction.response.send_message("❌ An error occurred while removing the favorite.", ephemeral=True)
+
+@bot.tree.command(
+    name='setup-roles',
+    description="Configure which Discord roles can manage favorites"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+async def setup_roles(interaction: discord.Interaction, role: discord.Role = None, permission_level: str = None):
+  # Check permissions
+  perm_manager = get_permission_manager()
+  if not perm_manager.can_manage_roles(interaction.guild.id, interaction.user):
+    await interaction.response.send_message(
+      "❌ You don't have permission to manage role assignments. Ask an admin to assign you the appropriate role.",
+      ephemeral=True
+    )
+    return
+  
+  try:
+    # If no parameters provided, show current setup
+    if not role and not permission_level:
+      role_assignments = perm_manager.get_server_role_assignments(interaction.guild.id)
+      available_roles = perm_manager.get_available_permission_roles()
+      
+      embed = create_role_setup_embed(role_assignments, available_roles, interaction.guild.name)
+      await interaction.response.send_message(embed=embed)
+      return
+    
+    # Both parameters required for assignment
+    if not role or not permission_level:
+      await interaction.response.send_message(
+        "❌ Please provide both a role and permission level.\n"
+        "Example: `/setup-roles @DJ dj`\n"
+        "Available levels: user, dj, radio manager, admin",
+        ephemeral=True
+      )
+      return
+    
+    # Validate permission level
+    available_roles = perm_manager.get_available_permission_roles()
+    valid_levels = [r['role_name'] for r in available_roles]
+    
+    if permission_level.lower() not in valid_levels:
+      await interaction.response.send_message(
+        f"❌ Invalid permission level. Available levels: {', '.join(valid_levels)}",
+        ephemeral=True
+      )
+      return
+    
+    # Assign the role
+    success = perm_manager.assign_role_permission(
+      guild_id=interaction.guild.id,
+      role_id=role.id,
+      role_name=permission_level.lower()
+    )
+    
+    if success:
+      await interaction.response.send_message(
+        f"✅ Assigned role {role.mention} to permission level **{permission_level}**"
+      )
+    else:
+      await interaction.response.send_message(
+        "❌ Failed to assign role permission. Please check the permission level is valid.",
+        ephemeral=True
+      )
+      
+  except Exception as e:
+    logger.error(f"Error in setup_roles command: {e}")
+    if interaction.response.is_done():
+      await interaction.followup.send("❌ An error occurred while setting up roles.", ephemeral=True)
+    else:
+      await interaction.response.send_message("❌ An error occurred while setting up roles.", ephemeral=True)
+
+### END FAVORITES COMMANDS ###
 
 @bot.tree.error
 async def on_command_error(interaction: discord.Interaction, error):
@@ -355,6 +622,43 @@ def get_station_info(url: str):
 
   return stationinfo
 
+# Handle stream disconnect with proper state cleanup
+async def handle_stream_disconnect(guild: discord.Guild):
+  """Handle stream disconnection and clean up state properly"""
+  try:
+    logger.info(f"[{guild.id}]: Handling stream disconnect")
+    
+    # Get current state before clearing
+    channel = get_state(guild.id, 'text_channel')
+    
+    # Notify users if possible
+    if channel:
+      try:
+        # Check if we have permission to send messages
+        if channel.permissions_for(guild.me).send_messages:
+          await channel.send("🔌 Stream disconnected. Use `/play` to start a new stream!")
+      except Exception as e:
+        logger.warning(f"[{guild.id}]: Could not send disconnect notification: {e}")
+    
+    # Ensure voice client is properly disconnected
+    voice_client = guild.voice_client
+    if voice_client:
+      try:
+        if voice_client.is_connected():
+          await voice_client.disconnect()
+          logger.info(f"[{guild.id}]: Voice client disconnected")
+      except Exception as e:
+        logger.warning(f"[{guild.id}]: Error disconnecting voice client: {e}")
+    
+    # Clear all state for this guild
+    clear_state(guild.id)
+    logger.info(f"[{guild.id}]: State cleared after disconnect")
+    
+  except Exception as e:
+    logger.error(f"[{guild.id}]: Error in handle_stream_disconnect: {e}")
+    # Ensure state is cleared even if other operations fail
+    clear_state(guild.id)
+
 # Resync the stream by leaving and coming back
 async def refresh_stream(interaction: discord.Interaction):
   url = get_state(interaction.guild.id, 'current_stream_url')
@@ -411,8 +715,18 @@ async def play_stream(interaction, url):
 
   # Pipe music stream to FFMpeg
   music_stream = discord.FFmpegPCMAudio(resp, pipe=True, options="-filter:a loudnorm=I=-30:LRA=4:TP=-2")
-  # voice_client.play(music_stream)
-  voice_client.play(music_stream, after=lambda e: asyncio.run_coroutine_threadsafe(voice_client.disconnect(), bot.loop))
+  
+  # Create proper cleanup callback that handles state
+  def stream_finished_callback(error):
+    if error:
+      logger.error(f"Stream finished with error: {error}")
+    else:
+      logger.info("Stream finished normally")
+    
+    # Schedule proper cleanup with state management
+    asyncio.run_coroutine_threadsafe(handle_stream_disconnect(interaction.guild), bot.loop)
+  
+  voice_client.play(music_stream, after=stream_finished_callback)
 
   # Everything was successful, lets keep all the data
   set_state(interaction.guild.id, 'current_stream_url', url)
@@ -510,9 +824,22 @@ async def monitor_metadata():
     logger.error(f"An unhandled error occurred in the metadata listener: {e}")
 
 
-# Get all ids of guilds that have active streams
+# Get all ids of guilds that have active streams and valid voice clients
 def all_active_guild_ids():
-  return [x for x in server_state.keys() if server_state[x]]
+  active_ids = []
+  for guild_id in server_state.keys():
+    if not server_state[guild_id]:  # Skip empty state
+      continue
+    
+    # Validate that voice client actually exists and is connected
+    guild = bot.get_guild(guild_id)
+    if guild and guild.voice_client and guild.voice_client.is_connected():
+      active_ids.append(guild_id)
+    elif server_state[guild_id]:  # State exists but no valid voice client
+      logger.warning(f"[{guild_id}]: State exists but no voice client - cleaning up stale state")
+      clear_state(guild_id)  # Clean up stale state
+  
+  return active_ids
 
 # Getter for state of a guild
 def get_state(guild_id, var=None):
