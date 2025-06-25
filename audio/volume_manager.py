@@ -11,8 +11,9 @@ from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 
 import numpy as np
+from discord.ext import commands
 
-from core import StateManager, EventBus, ConfigurationManager
+from core import StateManager, EventBus, ConfigurationManager, ServiceRegistry
 # Import from audio module to match service registration path
 from audio import (
     IVolumeManager, AudioConfig
@@ -577,7 +578,7 @@ class VolumeManager(IVolumeManager):
                 return False
             
             # Get bot instance from injected service registry
-            bot = self.service_registry.get_optional('bot')
+            bot = self.service_registry.get_optional(commands.AutoShardedBot)
             if not bot:
                 logger.debug(f"[{guild_id}]: Bot instance not available for real-time volume update")
                 return False

@@ -6,7 +6,7 @@ import logging
 import asyncio
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
-from discord.ext import tasks
+from discord.ext import tasks, commands
 
 from core import ServiceRegistry, StateManager, EventBus
 from .stream_service import StreamService
@@ -251,7 +251,7 @@ class MonitoringService:
         """Get Discord guild by ID"""
         try:
             # Try to get bot from service registry
-            bot = self.service_registry.get_optional('bot')
+            bot = self.service_registry.get_optional(commands.AutoShardedBot)
             if bot and hasattr(bot, 'guilds'):
                 return next((guild for guild in bot.guilds if guild.id == guild_id), None)
             return None

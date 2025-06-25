@@ -8,6 +8,7 @@ import urllib.request
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 import discord
+from discord.ext import commands
 
 from core import ServiceRegistry, StateManager, EventBus
 from audio import IAudioProcessor, StreamManager, AudioConfig
@@ -384,7 +385,8 @@ class StreamService:
                     logger.warning(f"[{guild_id}]: Could not send disconnect notification: {e}")
             
             # Get guild for voice client cleanup
-            guild = discord.utils.get(self.service_registry.get('bot').guilds, id=guild_id) if 'bot' in self.service_registry._services else None
+            bot = self.service_registry.get_optional(commands.AutoShardedBot)
+            guild = discord.utils.get(bot.guilds, id=guild_id) if bot else None
             
             # Clean up voice client
             if guild and guild.voice_client:
@@ -639,7 +641,7 @@ class StreamService:
                     return
                 
                 # Get voice client (should still be connected)
-                bot = self.service_registry.get_optional('bot')
+                bot = self.service_registry.get_optional(commands.AutoShardedBot)
                 if not bot:
                     logger.error(f"[{guild_id}]: Bot instance not available for recovery")
                     await self._handle_stream_disconnect(guild_id)
@@ -776,7 +778,7 @@ class StreamService:
         """
         try:
             # Get the bot instance from service registry
-            bot = self.service_registry.get_optional('bot')
+            bot = self.service_registry.get_optional(commands.AutoShardedBot)
             if not bot:
                 return None
             
