@@ -1,14 +1,14 @@
 services:
-  bunbot:
+  discord:
     build: .
-    container_name: 'bunbot'
+    container_name: 'discord'
     volumes:
       - ./:/app
     environment:
       - CLUSTER_ID=0
-  bunbot1:
-    container_name: 'bunbot1'
+  discord1:
+    container_name: 'discord1'
     extends:
-      service: bunbot
+      service: discord
     environment:
       - CLUSTER_ID=1
