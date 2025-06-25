@@ -2,57 +2,39 @@
 Audio Processing Interfaces
 
 This module exports both legacy and advanced interfaces to resolve import conflicts.
-Legacy interfaces are imported from the parent interfaces.py file.
+Legacy interfaces are imported from the parent audio module to ensure single source of truth.
 Advanced interfaces are imported from advanced_interfaces.py.
 """
 
-# Import legacy interfaces from the parent interfaces.py file
-import sys
-import os
-import importlib.util
+# Import legacy interfaces from parent audio module to ensure same objects
+# This eliminates the duplicate module creation issue
+from .. import (
+    IAudioProcessor, IVolumeManager, IEffectsChain, IAudioMixer,
+    AudioConfig, AudioStream, AudioMetrics, ProcessedAudioSource,
+    AudioQuality, EffectType, MixingMode
+)
 
-# Load the legacy interfaces.py file directly to avoid circular imports
+# Import AUDIO_EVENTS separately to avoid circular imports
+import importlib.util
+import os
 interfaces_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'interfaces.py')
-spec = importlib.util.spec_from_file_location("legacy_interfaces", interfaces_path)
+spec = importlib.util.spec_from_file_location("audio_interfaces", interfaces_path)
 if spec is not None and spec.loader is not None:
-    legacy_interfaces = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(legacy_interfaces)
-    
-    # Import legacy interfaces
-    IAudioProcessor = legacy_interfaces.IAudioProcessor
-    IVolumeManager = legacy_interfaces.IVolumeManager
-    IEffectsChain = legacy_interfaces.IEffectsChain
-    IAudioMixer = legacy_interfaces.IAudioMixer
-    IStreamManager = legacy_interfaces.IStreamManager
-    AudioConfig = legacy_interfaces.AudioConfig
-    AudioStream = legacy_interfaces.AudioStream
-    AudioMetrics = legacy_interfaces.AudioMetrics
-    ProcessedAudioSource = legacy_interfaces.ProcessedAudioSource
-    AudioQuality = legacy_interfaces.AudioQuality
-    EffectType = legacy_interfaces.EffectType
-    MixingMode = legacy_interfaces.MixingMode
-    AudioFormat = legacy_interfaces.AudioFormat
-    AUDIO_EVENTS = legacy_interfaces.AUDIO_EVENTS
+    audio_interfaces = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(audio_interfaces)
+    AUDIO_EVENTS = audio_interfaces.AUDIO_EVENTS
+    # Import additional items that might not be in parent __init__.py
+    try:
+        IStreamManager = audio_interfaces.IStreamManager
+        AudioFormat = audio_interfaces.AudioFormat
+    except AttributeError:
+        # Create fallbacks if not available
+        class IStreamManager: pass
+        class AudioFormat: pass
 else:
-    # Fallback - create placeholder classes if import fails
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning("Failed to import legacy audio interfaces")
-    
-    class IAudioProcessor: pass
-    class IVolumeManager: pass
-    class IEffectsChain: pass
-    class IAudioMixer: pass
-    class IStreamManager: pass
-    class AudioConfig: pass
-    class AudioStream: pass
-    class AudioMetrics: pass
-    class ProcessedAudioSource: pass
-    class AudioQuality: pass
-    class EffectType: pass
-    class MixingMode: pass
-    class AudioFormat: pass
     AUDIO_EVENTS = {}
+    class IStreamManager: pass
+    class AudioFormat: pass
 
 # Import advanced interfaces
 from .advanced_interfaces import (

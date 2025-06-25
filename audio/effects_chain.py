@@ -11,9 +11,27 @@ from datetime import datetime, timezone
 import numpy as np
 
 from core import StateManager, EventBus, ConfigurationManager
-from .interfaces import (
-    IEffectsChain, EffectType, AudioConfig, AUDIO_EVENTS
+# Import from audio module to match service registration path
+from audio import (
+    IEffectsChain, EffectType, AudioConfig
 )
+
+# Import AUDIO_EVENTS directly from interfaces.py
+try:
+    import importlib.util
+    import os
+    
+    # Load the interfaces.py file directly for AUDIO_EVENTS
+    interfaces_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'audio', 'interfaces.py')
+    spec = importlib.util.spec_from_file_location("audio_interfaces", interfaces_path)
+    if spec is not None and spec.loader is not None:
+        audio_interfaces = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(audio_interfaces)
+        AUDIO_EVENTS = audio_interfaces.AUDIO_EVENTS
+    else:
+        AUDIO_EVENTS = {}
+except Exception:
+    AUDIO_EVENTS = {}
 
 logger = logging.getLogger('discord.audio.effects_chain')
 

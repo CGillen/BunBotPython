@@ -195,8 +195,8 @@ class ConfigurationManager:
     from multiple sources with environment-specific overrides.
     """
     
-    def __init__(self, base_path: Optional[Path] = None):
-        self.base_path = base_path or Path.cwd()
+    def __init__(self):
+        self.base_path = Path.cwd()  # Always use current working directory
         self.config_dir = self.base_path / "config"
         self.environment = self._detect_environment()
         self._configuration: Optional[BotConfiguration] = None

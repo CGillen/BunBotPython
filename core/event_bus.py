@@ -187,10 +187,10 @@ class EventBus:
     and comprehensive event management capabilities.
     """
     
-    def __init__(self, max_history: int = 1000):
+    def __init__(self):
         self._handlers: Dict[str, EventHandler] = {}
         self._event_history: List[Event] = []
-        self._max_history = max_history
+        self._max_history = 1000  # Default history size for production use
         self._error_handlers: List[Callable] = []
         self._middleware: List[Callable] = []
         self._stats = {

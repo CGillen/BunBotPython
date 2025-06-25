@@ -10,9 +10,10 @@ from datetime import datetime, timezone
 import discord
 
 from core import ServiceRegistry, StateManager, EventBus
-from audio import AudioProcessor, StreamManager, AudioConfig
-from monitoring import HealthMonitor
+from audio import IAudioProcessor, StreamManager, AudioConfig
+from monitoring.interfaces import IHealthMonitor
 from utils import create_ffmpeg_audio_source, get_ffmpeg_info
+from utils.voice_connection_fix import connect_to_voice_channel_safe, disconnect_voice_client_safe
 import shout_errors
 import urllib_hack
 from streamscrobbler import streamscrobbler
@@ -33,9 +34,9 @@ class StreamService:
         self.event_bus = service_registry.get(EventBus)
         
         # Get audio and monitoring services
-        self.audio_processor = service_registry.get_optional(AudioProcessor)
+        self.audio_processor = service_registry.get_optional(IAudioProcessor)
         self.stream_manager = service_registry.get_optional(StreamManager) 
-        self.health_monitor = service_registry.get_optional(HealthMonitor)
+        self.health_monitor = service_registry.get_optional(IHealthMonitor)
         
         logger.info("StreamService initialized")
     
@@ -81,9 +82,11 @@ class StreamService:
             if not stream_response:
                 raise shout_errors.StreamOffline("Failed to connect to stream")
             
-            # Connect to voice channel with retry logic
+            # Connect to voice channel using native Discord.py v8 fix
             if not voice_client:
-                voice_client = await self._connect_to_voice_with_retry(voice_channel, guild_id)
+                voice_client = await connect_to_voice_channel_safe(interaction.guild, voice_channel)
+                if not voice_client:
+                    raise RuntimeError("Failed to connect to voice channel after all retry attempts")
             
             # Brief stabilization wait for voice connection
             await asyncio.sleep(0.5)

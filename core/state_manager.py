@@ -129,11 +129,11 @@ class StateManager:
     persistent, and event-driven state management system.
     """
     
-    def __init__(self, persistence_enabled: bool = True):
+    def __init__(self):
         self._guild_states: Dict[int, GuildState] = {}
         self._locks: Dict[int, Lock] = {}  # Per-guild locks for thread safety
         self._global_lock = Lock()
-        self._persistence_enabled = persistence_enabled
+        self._persistence_enabled = True  # Always enabled for production use
         self._cleanup_task: Optional[asyncio.Task] = None
         self._event_listeners: List[Any] = []  # Event listeners for state changes
         

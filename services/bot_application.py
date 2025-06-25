@@ -151,6 +151,7 @@ class BunBotApplication:
             self.service_registry.register(UIService, lifetime=ServiceLifetime.SINGLETON)
             self.service_registry.register(StreamService, lifetime=ServiceLifetime.SINGLETON)
             self.service_registry.register(FavoritesService, lifetime=ServiceLifetime.SINGLETON)
+            self.service_registry.register(MonitoringService, lifetime=ServiceLifetime.SINGLETON)
             
             # Register audio processing services
             await self._register_audio_services()
@@ -177,9 +178,10 @@ class BunBotApplication:
                 from monitoring.health_monitor import HealthMonitor
                 
                 # Register MetricsCollector with custom factory to pass service_registry
-                def create_metrics_collector(state_manager, event_bus, config_manager):
+                def create_metrics_collector(state_manager: StateManager, event_bus: EventBus, 
+                                           config_manager: ConfigurationManager, service_registry: ServiceRegistry):
                     return MetricsCollector(state_manager, event_bus, config_manager, 
-                                          service_registry=self.service_registry)
+                                          service_registry=service_registry)
                 
                 self.service_registry.register(
                     IMetricsCollector, 
@@ -188,9 +190,10 @@ class BunBotApplication:
                 )
                 
                 # Register AlertManager with custom factory to pass service_registry  
-                def create_alert_manager(state_manager, event_bus, config_manager):
+                def create_alert_manager(state_manager: StateManager, event_bus: EventBus, 
+                                       config_manager: ConfigurationManager, service_registry: ServiceRegistry):
                     return AlertManager(state_manager, event_bus, config_manager,
-                                      service_registry=self.service_registry)
+                                      service_registry=service_registry)
                 
                 self.service_registry.register(
                     IAlertManager,
@@ -254,9 +257,7 @@ class BunBotApplication:
                 
                 # Register VolumeManager with custom factory to pass service_registry
                 def create_volume_manager(state_manager: StateManager, event_bus: EventBus, 
-                                        config_manager: ConfigurationManager):
-                    # Capture service_registry in closure to fix scope issue
-                    service_registry = self.service_registry
+                                        config_manager: ConfigurationManager, service_registry: ServiceRegistry):
                     return VolumeManager(state_manager, event_bus, config_manager, service_registry)
                 
                 self.service_registry.register(
@@ -274,6 +275,14 @@ class BunBotApplication:
                 self.service_registry.register(
                     IAudioMixer, 
                     AudioMixer, 
+                    lifetime=ServiceLifetime.SINGLETON
+                )
+                
+                # Register StreamManager (required by StreamService)
+                from audio.stream_manager import StreamManager
+                self.service_registry.register(
+                    StreamManager, 
+                    StreamManager,
                     lifetime=ServiceLifetime.SINGLETON
                 )
                 
