@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: bunbot-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: LOG_LEVEL
+        value: INFO
+      - key: TLS_VERIFY
+        value: "True"
+      - key: CLUSTER_ID
+        value: "0"
+      - key: TOTAL_CLUSTERS
+        value: "1"
+      - key: TOTAL_SHARDS
+        value: "1"
+      - key: DEMO_MODE
+        value: "False"
