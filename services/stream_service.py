@@ -95,33 +95,39 @@ class StreamService:
             # Create audio source with enhanced processing
             audio_source = await self._create_audio_source(guild_id, stream_response, url)
             
+            # Store the current event loop for use in callback
+            main_loop = asyncio.get_running_loop()
+            
             # Create cleanup callback with recovery logic
             def stream_finished_callback(error):
-                if error:
-                    logger.error(f"[{guild_id}]: Stream finished with error: {error}")
-                    
-                    # Check if this is a recoverable error
-                    if self._is_recoverable_error(error):
-                        logger.info(f"[{guild_id}]: Attempting automatic recovery for recoverable error")
-                        # Schedule recovery attempt
-                        asyncio.run_coroutine_threadsafe(
-                            self._attempt_stream_recovery(guild_id, str(error)), 
-                            asyncio.get_event_loop()
-                        )
+                try:
+                    if error:
+                        logger.error(f"[{guild_id}]: Stream finished with error: {error}")
+                        
+                        # Check if this is a recoverable error
+                        if self._is_recoverable_error(error):
+                            logger.info(f"[{guild_id}]: Attempting automatic recovery for recoverable error")
+                            # Schedule recovery attempt using the stored main loop
+                            asyncio.run_coroutine_threadsafe(
+                                self._attempt_stream_recovery(guild_id, str(error)), 
+                                main_loop
+                            )
+                        else:
+                            logger.info(f"[{guild_id}]: Non-recoverable error, performing cleanup")
+                            # Schedule cleanup for non-recoverable errors using the stored main loop
+                            asyncio.run_coroutine_threadsafe(
+                                self._handle_stream_disconnect(guild_id), 
+                                main_loop
+                            )
                     else:
-                        logger.info(f"[{guild_id}]: Non-recoverable error, performing cleanup")
-                        # Schedule cleanup for non-recoverable errors
+                        logger.info(f"[{guild_id}]: Stream finished normally")
+                        # Schedule normal cleanup using the stored main loop
                         asyncio.run_coroutine_threadsafe(
                             self._handle_stream_disconnect(guild_id), 
-                            asyncio.get_event_loop()
+                            main_loop
                         )
-                else:
-                    logger.info(f"[{guild_id}]: Stream finished normally")
-                    # Schedule normal cleanup
-                    asyncio.run_coroutine_threadsafe(
-                        self._handle_stream_disconnect(guild_id), 
-                        asyncio.get_event_loop()
-                    )
+                except Exception as callback_error:
+                    logger.error(f"[{guild_id}]: Error in stream callback: {callback_error}")
             
             # Start playback
             voice_client.play(audio_source, after=stream_finished_callback)
@@ -134,6 +140,9 @@ class StreamService:
                                           guild_id=guild_id,
                                           url=url,
                                           station_info=station_info)
+            
+            # Auto-create persistent control panel if none exists
+            await self._auto_create_panel(guild_id, interaction.channel)
             
             logger.info(f"[{guild_id}]: Stream started successfully")
             return True
@@ -286,47 +295,58 @@ class StreamService:
             return None
     
     async def _create_audio_source(self, guild_id: int, stream_response: any, url: str) -> discord.AudioSource:
-        """Create audio source with optional processing and volume control"""
+        """Create audio source with optional processing, EQ, and volume control"""
         try:
             # Get current volume setting
             guild_state = self.state_manager.get_guild_state(guild_id, create_if_missing=True)
             volume_level = getattr(guild_state, 'volume_level', 0.8)  # Default to 80%
             
+            # Get EQ settings from effects chain
+            eq_settings = await self._get_eq_settings(guild_id)
+            
+            # Build FFmpeg filter chain with EQ
+            filter_chain = await self._build_ffmpeg_filter_chain(volume_level, eq_settings)
+            
             # Use enhanced audio processing if available
             if self.audio_processor:
-                logger.debug(f"[{guild_id}]: Creating enhanced audio source with volume {volume_level:.2f}")
-                # Create enhanced audio source with processing and volume
+                logger.debug(f"[{guild_id}]: Creating enhanced audio source with volume {volume_level:.2f} and EQ")
+                # Create enhanced audio source with processing, EQ, and volume
                 audio_source = create_ffmpeg_audio_source(
                     stream_response, 
                     pipe=True, 
-                    options=f"-filter:a loudnorm=I=-30:LRA=4:TP=-2,volume={volume_level}"
+                    options=f"-filter:a {filter_chain}"
                 )
                 
                 # Wrap with PCMVolumeTransformer for real-time volume control
                 audio_source = discord.PCMVolumeTransformer(audio_source, volume=volume_level)
             else:
-                logger.debug(f"[{guild_id}]: Creating basic audio source with volume {volume_level:.2f}")
-                # Fallback to basic audio source with volume
+                logger.debug(f"[{guild_id}]: Creating basic audio source with volume {volume_level:.2f} and EQ")
+                # Fallback to basic audio source with EQ and volume
                 audio_source = create_ffmpeg_audio_source(
                     stream_response, 
                     pipe=True, 
-                    options=f"-filter:a loudnorm=I=-30:LRA=4:TP=-2,volume={volume_level}"
+                    options=f"-filter:a {filter_chain}"
                 )
                 
                 # Wrap with PCMVolumeTransformer for real-time volume control
                 audio_source = discord.PCMVolumeTransformer(audio_source, volume=volume_level)
             
-            logger.info(f"[{guild_id}]: Audio source created with volume {volume_level:.2f}")
+            eq_desc = f"Bass: {eq_settings['bass']:+.1f}dB, Mid: {eq_settings['mid']:+.1f}dB, Treble: {eq_settings['treble']:+.1f}dB"
+            logger.info(f"[{guild_id}]: Audio source created with volume {volume_level:.2f} and EQ ({eq_desc})")
             return audio_source
             
         except Exception as e:
-            logger.error(f"[{guild_id}]: Failed to create audio source with volume control: {e}")
-            # Fallback to basic source without processing but with volume
+            logger.error(f"[{guild_id}]: Failed to create audio source with EQ and volume control: {e}")
+            # Fallback to basic source without EQ but with volume
             try:
                 guild_state = self.state_manager.get_guild_state(guild_id, create_if_missing=True)
                 volume_level = getattr(guild_state, 'volume_level', 0.8)
                 
-                basic_source = create_ffmpeg_audio_source(stream_response, pipe=True)
+                basic_source = create_ffmpeg_audio_source(
+                    stream_response, 
+                    pipe=True, 
+                    options=f"-filter:a loudnorm=I=-30:LRA=4:TP=-2,volume={volume_level}"
+                )
                 return discord.PCMVolumeTransformer(basic_source, volume=volume_level)
             except Exception as fallback_error:
                 logger.error(f"[{guild_id}]: Fallback audio source creation failed: {fallback_error}")
@@ -794,6 +814,219 @@ class StreamService:
             logger.error(f"[{guild_id}]: Failed to get active audio source: {e}")
             return None
     
+    async def _get_eq_settings(self, guild_id: int) -> Dict[str, float]:
+        """Get EQ settings from effects chain"""
+        try:
+            # Try to get effects chain service
+            from audio import IEffectsChain
+            effects_chain = self.service_registry.get_optional(IEffectsChain)
+            
+            if not effects_chain:
+                logger.debug(f"[{guild_id}]: Effects chain not available, using flat EQ")
+                return {'bass': 0.0, 'mid': 0.0, 'treble': 0.0}
+            
+            # Look for existing EQ effect in the effects chain
+            if hasattr(effects_chain, '_effect_chains') and guild_id in effects_chain._effect_chains:
+                effects = effects_chain._effect_chains[guild_id]
+                logger.debug(f"[{guild_id}]: Found {len(effects)} effects in chain")
+                
+                for effect in effects:
+                    # More robust type checking
+                    effect_type_str = None
+                    if hasattr(effect['type'], 'value'):
+                        effect_type_str = effect['type'].value
+                    elif hasattr(effect['type'], 'name'):
+                        effect_type_str = effect['type'].name.lower()
+                    else:
+                        effect_type_str = str(effect['type']).lower()
+                    
+                    logger.debug(f"[{guild_id}]: Checking effect type: {effect_type_str}, enabled: {effect.get('enabled', False)}")
+                    
+                    if 'equalizer' in effect_type_str.lower() and effect.get('enabled', False):
+                        params = effect['parameters']
+                        eq_settings = {
+                            'bass': float(params.get('bass', 0.0)),
+                            'mid': float(params.get('mid', 0.0)),
+                            'treble': float(params.get('treble', 0.0))
+                        }
+                        logger.info(f"[{guild_id}]: Found EQ settings: {eq_settings}")
+                        return eq_settings
+            
+            # Return flat EQ if no EQ effect found
+            logger.debug(f"[{guild_id}]: No EQ effect found, using flat EQ")
+            return {'bass': 0.0, 'mid': 0.0, 'treble': 0.0}
+            
+        except Exception as e:
+            logger.error(f"[{guild_id}]: Failed to get EQ settings: {e}")
+            return {'bass': 0.0, 'mid': 0.0, 'treble': 0.0}
+    
+    async def _build_ffmpeg_filter_chain(self, volume_level: float, eq_settings: Dict[str, float], 
+                                       noise_reduction: bool = True) -> str:
+        """Build FFmpeg filter chain with normalization, noise reduction, EQ, and volume"""
+        try:
+            filters = []
+            
+            # 1. Noise reduction (first in chain for best results)
+            if noise_reduction:
+                # Use afftdn (adaptive noise reduction) - most effective for streaming audio
+                # nr=10 (noise reduction strength 0-97), nf=-25 (noise floor in dB)
+                filters.append("afftdn=nr=10:nf=-25")
+            
+            # 2. Loudness normalization 
+            filters.append("loudnorm=I=-30:LRA=4:TP=-2")
+            
+            # 3. EQ processing using superequalizer for better quality
+            if any(abs(val) > 0.1 for val in eq_settings.values()):
+                # Use superequalizer with 18 bands for professional quality
+                # Convert 3-band EQ to superequalizer format
+                bass_gain = eq_settings['bass']
+                mid_gain = eq_settings['mid'] 
+                treble_gain = eq_settings['treble']
+                
+                # Map to 18-band superequalizer (bands 1-6: bass, 7-12: mid, 13-18: treble)
+                eq_bands = []
+                for i in range(1, 19):
+                    if i <= 6:  # Bass bands (65Hz - 250Hz)
+                        eq_bands.append(str(bass_gain))
+                    elif i <= 12:  # Mid bands (500Hz - 4kHz)
+                        eq_bands.append(str(mid_gain))
+                    else:  # Treble bands (8kHz - 16kHz)
+                        eq_bands.append(str(treble_gain))
+                
+                supereq_filter = f"superequalizer={':'.join(eq_bands)}"
+                filters.append(supereq_filter)
+                logger.debug(f"Applied superequalizer: Bass={bass_gain}dB, Mid={mid_gain}dB, Treble={treble_gain}dB")
+            
+            # 4. Dynamic range compression for consistent levels
+            filters.append("acompressor=threshold=0.089:ratio=9:attack=200:release=1000")
+            
+            # 5. Volume adjustment (last in chain)
+            filters.append(f"volume={volume_level}")
+            
+            # Join all filters with commas
+            filter_chain = ",".join(filters)
+            
+            logger.info(f"Built enhanced FFmpeg filter chain: {filter_chain}")
+            return filter_chain
+            
+        except Exception as e:
+            logger.error(f"Failed to build FFmpeg filter chain: {e}")
+            # Fallback to basic chain with simple EQ
+            fallback_filters = ["loudnorm=I=-30:LRA=4:TP=-2"]
+            
+            # Add basic EQ if settings are non-zero
+            if any(abs(val) > 0.1 for val in eq_settings.values()):
+                if abs(eq_settings['bass']) > 0.1:
+                    fallback_filters.append(f"equalizer=f=100:width_type=h:width=200:g={eq_settings['bass']}")
+                if abs(eq_settings['mid']) > 0.1:
+                    fallback_filters.append(f"equalizer=f=1000:width_type=h:width=500:g={eq_settings['mid']}")
+                if abs(eq_settings['treble']) > 0.1:
+                    fallback_filters.append(f"equalizer=f=10000:width_type=h:width=2000:g={eq_settings['treble']}")
+            
+            fallback_filters.append(f"volume={volume_level}")
+            return ",".join(fallback_filters)
+
+    async def _auto_create_panel(self, guild_id: int, channel: discord.TextChannel) -> None:
+        """
+        Automatically create a persistent control panel when music starts.
+        
+        Args:
+            guild_id: Discord guild ID
+            channel: Text channel where the play command was used
+        """
+        logger.info(f"[{guild_id}]: AUTO-PANEL: Starting auto-panel creation")
+        
+        try:
+            logger.info(f"[{guild_id}]: AUTO-PANEL: Entered try block")
+            
+            # Get UI service directly from service registry without import to avoid circular dependency
+            ui_service = None
+            logger.info(f"[{guild_id}]: AUTO-PANEL: About to search service registry")
+            
+            try:
+                logger.info(f"[{guild_id}]: AUTO-PANEL: Searching for UIService in registry")
+                # Access UIService instance directly from registry without importing
+                for service_type, service_def in self.service_registry._services.items():
+                    logger.debug(f"[{guild_id}]: AUTO-PANEL: Checking service type: {service_type.__name__ if hasattr(service_type, '__name__') else str(service_type)}")
+                    if hasattr(service_type, '__name__') and service_type.__name__ == 'UIService':
+                        ui_service = service_def.instance
+                        logger.info(f"[{guild_id}]: AUTO-PANEL: Found UIService instance: {ui_service is not None}")
+                        break
+                
+                logger.info(f"[{guild_id}]: AUTO-PANEL: UIService search complete: {ui_service is not None}")
+                        
+            except Exception as e:
+                logger.error(f"[{guild_id}]: AUTO-PANEL: Error getting UIService from registry: {e}")
+                return
+            
+            if not ui_service:
+                logger.warning(f"[{guild_id}]: AUTO-PANEL: UIService not available for auto-panel creation")
+                return
+            
+            logger.info(f"[{guild_id}]: AUTO-PANEL: UIService found, checking if panel already exists")
+            
+            # Check if panel already exists
+            try:
+                has_panel = ui_service.has_persistent_panel(guild_id)
+                logger.info(f"[{guild_id}]: AUTO-PANEL: Panel exists check result: {has_panel}")
+                if has_panel:
+                    logger.info(f"[{guild_id}]: AUTO-PANEL: Panel already exists, skipping auto-creation")
+                    return
+            except Exception as e:
+                logger.error(f"[{guild_id}]: AUTO-PANEL: Error checking if panel exists: {e}")
+                return
+            
+            logger.info(f"[{guild_id}]: AUTO-PANEL: No existing panel found, validating channel")
+            
+            # Check if channel is a text channel and we have permissions
+            if not isinstance(channel, discord.TextChannel):
+                logger.info(f"[{guild_id}]: AUTO-PANEL: Channel is not a text channel (type: {type(channel)}), skipping auto-panel creation")
+                return
+            
+            logger.info(f"[{guild_id}]: AUTO-PANEL: Channel is TextChannel, checking permissions")
+            
+            try:
+                has_perms = channel.permissions_for(channel.guild.me).send_messages
+                logger.info(f"[{guild_id}]: AUTO-PANEL: Send message permission: {has_perms}")
+                if not has_perms:
+                    logger.info(f"[{guild_id}]: AUTO-PANEL: No permission to send messages in channel #{channel.name}, skipping auto-panel creation")
+                    return
+            except Exception as e:
+                logger.error(f"[{guild_id}]: AUTO-PANEL: Error checking channel permissions: {e}")
+                return
+            
+            logger.info(f"[{guild_id}]: AUTO-PANEL: All checks passed, creating persistent control panel in #{channel.name}")
+            
+            # Create the panel
+            try:
+                logger.info(f"[{guild_id}]: AUTO-PANEL: Calling create_persistent_panel")
+                success = await ui_service.create_persistent_panel(guild_id, channel)
+                logger.info(f"[{guild_id}]: AUTO-PANEL: Panel creation result: {success}")
+                
+                if success:
+                    logger.info(f"[{guild_id}]: AUTO-PANEL: Auto-created persistent control panel successfully")
+                    
+                    # Send a brief notification about the panel
+                    try:
+                        await channel.send(
+                            "🎛️ **Persistent control panel created!** Use the buttons below to control playback.",
+                            delete_after=10  # Auto-delete after 10 seconds to keep chat clean
+                        )
+                        logger.info(f"[{guild_id}]: AUTO-PANEL: Panel notification sent")
+                    except Exception as e:
+                        logger.warning(f"[{guild_id}]: AUTO-PANEL: Could not send panel notification: {e}")
+                else:
+                    logger.warning(f"[{guild_id}]: AUTO-PANEL: Failed to auto-create persistent control panel")
+                    
+            except Exception as e:
+                logger.error(f"[{guild_id}]: AUTO-PANEL: Error during panel creation: {e}")
+                
+        except Exception as e:
+            logger.error(f"[{guild_id}]: AUTO-PANEL: Critical error in auto-panel creation: {e}")
+            # Don't raise - panel creation failure shouldn't stop music playback
+        
+        logger.info(f"[{guild_id}]: AUTO-PANEL: Auto-panel creation method completed")
+
     def get_stream_stats(self) -> Dict[str, Any]:
         """Get stream service statistics"""
         active_streams = self.get_active_streams()

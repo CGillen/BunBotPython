@@ -11,7 +11,7 @@ from discord.ext import tasks, commands
 from core import ServiceRegistry, StateManager, EventBus
 from .stream_service import StreamService
 from .ui_service import UIService
-from streamscrobbler import streamscrobbler
+from .stream_metadata_service import StreamMetadataService
 
 logger = logging.getLogger('services.monitoring_service')
 
@@ -31,6 +31,9 @@ class MonitoringService:
         # Get related services
         self.stream_service = service_registry.get(StreamService)
         self.ui_service = service_registry.get(UIService)
+        
+        # Initialize StreamMetadataService
+        self.metadata_service = StreamMetadataService(service_registry)
         
         # Monitoring state
         self._monitoring_active = False
@@ -115,11 +118,11 @@ class MonitoringService:
             current_song = guild_state.current_song
             url = guild_state.current_stream_url
             
-            # Get station information
-            station_info = streamscrobbler.get_server_info(url)
+            # Get station information using resilient metadata service
+            station_info = await self.metadata_service.get_station_info(url)
             
             if station_info is None:
-                logger.warning(f"[{guild_id}]: Streamscrobbler returned None")
+                logger.warning(f"[{guild_id}]: Metadata service returned None")
                 return
             
             if station_info['status'] <= 0:

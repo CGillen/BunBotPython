@@ -100,6 +100,14 @@ if PYDANTIC_AVAILABLE:
         webhook_timeout: int = 10
         webhook_retry_attempts: int = 3
         
+        # Network Configuration
+        network_timeout: int = 10  # seconds
+        metadata_timeout: int = 5  # seconds
+        retry_attempts: int = 3
+        circuit_breaker_threshold: int = 5
+        circuit_breaker_timeout: int = 60
+        connection_pool_size: int = 10
+        
         @validator('log_level')
         def validate_log_level(cls, v):
             valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -171,6 +179,14 @@ else:
             # Integration Configuration
             self.webhook_timeout = kwargs.get('webhook_timeout', 10)
             self.webhook_retry_attempts = kwargs.get('webhook_retry_attempts', 3)
+            
+            # Network Configuration
+            self.network_timeout = kwargs.get('network_timeout', 10)
+            self.metadata_timeout = kwargs.get('metadata_timeout', 5)
+            self.retry_attempts = kwargs.get('retry_attempts', 3)
+            self.circuit_breaker_threshold = kwargs.get('circuit_breaker_threshold', 5)
+            self.circuit_breaker_timeout = kwargs.get('circuit_breaker_timeout', 60)
+            self.connection_pool_size = kwargs.get('connection_pool_size', 10)
             
             # Basic validation
             self._validate()

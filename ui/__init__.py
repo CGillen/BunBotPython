@@ -67,6 +67,14 @@ from .presence import (
     StreamInfoDisplay, StatusBroadcaster
 )
 
+# Persistent Control Panel System
+from .persistent_music_panel import PersistentMusicPanel
+from .panel_manager import PanelManager
+from .music_modals import (
+    PlayPauseModal, StationSelectionModal, FavoritesModal,
+    VolumeModal, EQModal, EffectsModal, SettingsModal
+)
+
 __all__ = [
     # Core Interfaces
     'UIConfig',
@@ -141,5 +149,16 @@ __all__ = [
     'ActivityManager',
     'NowPlayingDisplay',
     'StreamInfoDisplay',
-    'StatusBroadcaster'
+    'StatusBroadcaster',
+    
+    # Persistent Control Panel System
+    'PersistentMusicPanel',
+    'PanelManager',
+    'PlayPauseModal',
+    'StationSelectionModal',
+    'FavoritesModal',
+    'VolumeModal',
+    'EQModal',
+    'EffectsModal',
+    'SettingsModal'
 ]

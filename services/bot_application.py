@@ -18,6 +18,7 @@ from .stream_service import StreamService
 from .favorites_service import FavoritesService
 from .command_service import CommandService
 from .monitoring_service import MonitoringService
+from .stream_metadata_service import StreamMetadataService
 from audio import IAudioProcessor, IVolumeManager, IEffectsChain, IAudioMixer
 from monitoring.interfaces import IHealthMonitor, IMetricsCollector, IAlertManager
 
@@ -400,6 +401,16 @@ class BunBotApplication:
                 monitoring_service = self.service_registry.get_optional(MonitoringService)
                 if monitoring_service and hasattr(monitoring_service, 'start_monitoring'):
                     await monitoring_service.start_monitoring()
+                
+                # Restore persistent panels after bot restart
+                ui_service = self.service_registry.get_optional(UIService)
+                if ui_service and hasattr(ui_service, 'restore_persistent_panels'):
+                    try:
+                        restored_count = await ui_service.restore_persistent_panels()
+                        if restored_count > 0:
+                            logger.info(f"Restored {restored_count} persistent control panels")
+                    except Exception as e:
+                        logger.warning(f"Failed to restore persistent panels: {e}")
                 
                 self._startup_complete = True
                 

@@ -92,6 +92,9 @@ class CommandService:
             # Advanced audio processing commands (if scipy available)
             await self._register_advanced_audio_commands(bot)
             
+            # Panel management commands
+            await self._register_panel_commands(bot)
+            
             logger.info("All slash and prefix commands registered successfully")
             
         except Exception as e:
@@ -159,7 +162,18 @@ class CommandService:
                 if hasattr(interaction.user, 'voice') and interaction.user.voice:
                     voice_channel = interaction.user.voice.channel
                 
-                await play_logic(url, interaction.guild_id, interaction.user, interaction.channel, voice_channel)
+                # Ensure we pass the text channel where the command was used
+                # interaction.channel should be the text channel, but add defensive check
+                text_channel = interaction.channel
+                if not isinstance(text_channel, discord.TextChannel):
+                    # Fallback: try to find a text channel in the guild
+                    if interaction.guild:
+                        text_channel = interaction.guild.system_channel or discord.utils.find(
+                            lambda c: isinstance(c, discord.TextChannel) and c.permissions_for(interaction.guild.me).send_messages,
+                            interaction.guild.text_channels
+                        )
+                
+                await play_logic(url, interaction.guild_id, interaction.user, text_channel, voice_channel)
                 
             except Exception as e:
                 await self.error_service.handle_command_error(interaction, e)
@@ -819,6 +833,164 @@ class CommandService:
             logger.info(f"Advanced audio commands not available - missing dependencies: {e}")
         except Exception as e:
             logger.warning(f"Failed to register advanced audio commands: {e}")
+    
+    async def _register_panel_commands(self, bot: commands.AutoShardedBot) -> None:
+        """Register persistent panel management commands"""
+        
+        @bot.tree.command(
+            name='panel-create',
+            description="Create a persistent music control panel in this channel"
+        )
+        @discord.app_commands.checks.cooldown(rate=1, per=10)
+        async def panel_create(interaction: discord.Interaction):
+            try:
+                if not interaction.guild_id:
+                    await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+                    return
+                
+                # Check if panel already exists
+                if self.ui_service.has_persistent_panel(interaction.guild_id):
+                    await interaction.response.send_message(
+                        "⚠️ A persistent control panel already exists for this server. Use `/panel-remove` to remove it first.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Check permissions and channel type
+                if not interaction.guild or not interaction.channel:
+                    await interaction.response.send_message(
+                        "❌ Unable to access guild or channel information.",
+                        ephemeral=True
+                    )
+                    return
+                
+                if not isinstance(interaction.channel, discord.TextChannel):
+                    await interaction.response.send_message(
+                        "❌ This command can only be used in a text channel.",
+                        ephemeral=True
+                    )
+                    return
+                
+                if not interaction.channel.permissions_for(interaction.guild.me).send_messages:
+                    await interaction.response.send_message(
+                        "❌ I don't have permission to send messages in this channel.",
+                        ephemeral=True
+                    )
+                    return
+                
+                await interaction.response.send_message("🎛️ Creating persistent music control panel...")
+                
+                # Create the panel
+                success = await self.ui_service.create_persistent_panel(
+                    interaction.guild_id, 
+                    interaction.channel
+                )
+                
+                if success:
+                    await interaction.edit_original_response(
+                        content="✅ Persistent music control panel created! You can now control music using the buttons below."
+                    )
+                else:
+                    await interaction.edit_original_response(
+                        content="❌ Failed to create persistent control panel. Please try again."
+                    )
+                    
+            except Exception as e:
+                await self.error_service.handle_command_error(interaction, e)
+        
+        @bot.tree.command(
+            name='panel-remove',
+            description="Remove the persistent music control panel for this server"
+        )
+        @discord.app_commands.checks.cooldown(rate=1, per=10)
+        async def panel_remove(interaction: discord.Interaction):
+            try:
+                if not interaction.guild_id:
+                    await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+                    return
+                
+                # Check if panel exists
+                if not self.ui_service.has_persistent_panel(interaction.guild_id):
+                    await interaction.response.send_message(
+                        "❌ No persistent control panel exists for this server.",
+                        ephemeral=True
+                    )
+                    return
+                
+                await interaction.response.send_message("🗑️ Removing persistent music control panel...")
+                
+                # Remove the panel
+                success = await self.ui_service.remove_persistent_panel(interaction.guild_id)
+                
+                if success:
+                    await interaction.edit_original_response(
+                        content="✅ Persistent music control panel removed successfully."
+                    )
+                else:
+                    await interaction.edit_original_response(
+                        content="❌ Failed to remove persistent control panel. It may have already been deleted."
+                    )
+                    
+            except Exception as e:
+                await self.error_service.handle_command_error(interaction, e)
+        
+        @bot.tree.command(
+            name='panel-status',
+            description="Show information about the persistent control panel"
+        )
+        @discord.app_commands.checks.cooldown(rate=1, per=5)
+        async def panel_status(interaction: discord.Interaction):
+            try:
+                if not interaction.guild_id:
+                    await interaction.response.send_message("❌ This command can only be used in a server.", ephemeral=True)
+                    return
+                
+                # Get panel status
+                has_panel = self.ui_service.has_persistent_panel(interaction.guild_id)
+                ui_stats = self.ui_service.get_ui_stats()
+                
+                embed = discord.Embed(
+                    title="🎛️ Persistent Control Panel Status",
+                    color=0x00ff00 if has_panel else 0xff0000
+                )
+                
+                if has_panel:
+                    embed.add_field(
+                        name="Status", 
+                        value="✅ Active", 
+                        inline=True
+                    )
+                    embed.add_field(
+                        name="Features", 
+                        value="• Play/Pause/Stop controls\n• Volume & EQ adjustment\n• Station selection\n• Favorites management\n• Real-time status updates", 
+                        inline=False
+                    )
+                else:
+                    embed.add_field(
+                        name="Status", 
+                        value="❌ Not Active", 
+                        inline=True
+                    )
+                    embed.add_field(
+                        name="Create Panel", 
+                        value="Use `/panel-create` to create a persistent control panel in any channel.", 
+                        inline=False
+                    )
+                
+                # Add global stats for bot owners
+                if await bot.is_owner(interaction.user):
+                    embed.add_field(
+                        name="Global Stats",
+                        value=f"Total Active Panels: {ui_stats.get('active_panels', 0)}",
+                        inline=True
+                    )
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                
+            except Exception as e:
+                await self.error_service.handle_command_error(interaction, e)
+        
+        logger.info("Panel management commands registered successfully")
     
     def get_command_stats(self) -> Dict[str, Any]:
         """Get command service statistics"""

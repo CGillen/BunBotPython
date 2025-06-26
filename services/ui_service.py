@@ -60,7 +60,11 @@ class UIService:
             'info': 'ℹ️'
         }
         
-        logger.info("UIService initialized")
+        # Initialize panel manager with local import to avoid circular dependency
+        from ui.panel_manager import PanelManager
+        self.panel_manager = PanelManager(service_registry)
+        
+        logger.info("UIService initialized with panel manager")
     
     async def send_now_playing(self, channel: discord.TextChannel, guild_id: int, 
                               station_info: Dict[str, Any]) -> Optional[discord.Message]:
@@ -435,10 +439,75 @@ class UIService:
                 )
                 return error_embed, None
     
+    # Panel Management Methods
+    async def create_persistent_panel(self, guild_id: int, channel: discord.TextChannel) -> bool:
+        """
+        Create a persistent music control panel in the specified channel.
+        
+        Args:
+            guild_id: Discord guild ID
+            channel: Text channel to create panel in
+            
+        Returns:
+            True if panel created successfully, False otherwise
+        """
+        return await self.panel_manager.create_panel(guild_id, channel)
+    
+    async def remove_persistent_panel(self, guild_id: int) -> bool:
+        """
+        Remove the persistent music control panel for a guild.
+        
+        Args:
+            guild_id: Discord guild ID
+            
+        Returns:
+            True if panel removed successfully, False otherwise
+        """
+        return await self.panel_manager.remove_panel(guild_id)
+    
+    async def update_panel_message(self, guild_id: int, embed: discord.Embed, view: discord.ui.View) -> bool:
+        """
+        Update a panel message with new embed and view.
+        
+        Args:
+            guild_id: Discord guild ID
+            embed: New embed to display
+            view: New view with updated buttons
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        return await self.panel_manager.update_panel(guild_id)
+    
+    def has_persistent_panel(self, guild_id: int) -> bool:
+        """
+        Check if a guild has an active persistent panel.
+        
+        Args:
+            guild_id: Discord guild ID
+            
+        Returns:
+            True if panel exists, False otherwise
+        """
+        return self.panel_manager.has_panel(guild_id)
+    
+    async def restore_persistent_panels(self) -> int:
+        """
+        Restore persistent panels after bot restart.
+        
+        Returns:
+            Number of panels successfully restored
+        """
+        return await self.panel_manager.restore_panels()
+    
     def get_ui_stats(self) -> Dict[str, Any]:
         """Get UI service statistics"""
+        panel_stats = self.panel_manager.get_panel_stats()
         return {
             'colors_configured': len(self.colors),
             'emojis_available': len(self.emojis),
-            'service_initialized': True
+            'service_initialized': True,
+            'panel_manager_active': True,
+            'active_panels': panel_stats['active_panels'],
+            'total_guilds_with_panels': len(panel_stats['guild_ids'])
         }
