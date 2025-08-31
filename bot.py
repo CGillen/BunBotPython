@@ -8,6 +8,9 @@ import os, datetime
 import logging, logging.handlers
 import urllib
 import validators
+from services.health_monitor import HealthMonitor
+from services.interfaces import ErrorStates
+from services.state_manager import StateManager
 import shout_errors
 import urllib_hack
 from dotenv import load_dotenv
@@ -53,6 +56,7 @@ bot = commands.AutoShardedBot(command_prefix='/', case_insensitive=True, intents
 bot.cluster_id = CLUSTER_ID
 bot.total_shards = TOTAL_SHARDS
 
+server_state: StateManager
 server_state = {}
 ### Available state variables ###
 # current_stream_url = URL to playing (or about to be played) shoutcast stream
@@ -60,6 +64,7 @@ server_state = {}
 # metadata_listener = Asyncio task for listening to metadata (monitor_metadata())
 # text_channel = Text channel original play command came from
 # start_time = Time the current stream started playing
+# stream_offline_count = Number of times stream status has been checked and found offline
 # cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
 
 # Set up logging
@@ -86,6 +91,9 @@ file_handler.setFormatter(formatter)
 # Add handlers to the logger
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
+
+# Add health monitor
+health_monitor = HealthMonitor(bot=bot, logger=logger)
 
 
 
@@ -149,30 +157,30 @@ async def play(interaction: discord.Interaction, url: str):
 async def leave(interaction: discord.Interaction, force: bool = False):
   voice_client = interaction.guild.voice_client
   has_state = bool(get_state(interaction.guild.id, 'current_stream_url'))
-  
+
   # Handle normal case - voice client exists
   if voice_client:
     await interaction.response.send_message("👋 Seeya Later, Gator!")
     await stop_playback(interaction.guild)
     return
-  
+
   # Handle desync case - AUTOMATIC RECOVERY
   if has_state:
     if force:
       await interaction.response.send_message("🔧 Force clearing stale state...")
     else:
       await interaction.response.send_message("🔄 Detected state desync - automatically recovering...")
-    
+
     # Automatically clear stale state
     clear_state(interaction.guild.id)
     logger.info(f"[{interaction.guild.id}]: Auto-recovered from state desync via /leave")
-    
+
     if force:
       await interaction.edit_original_response(content="✅ Force cleared stale bot state. Ready for new streams!")
     else:
       await interaction.edit_original_response(content="✅ Auto-recovered from state issue. Ready for new streams!")
     return
-  
+
   # Normal case - nothing playing
   raise shout_errors.NoVoiceClient("😨 I'm not even playing any music! You don't have to be so mean")
 
@@ -307,14 +315,14 @@ async def set_favorite(interaction: discord.Interaction, url: str, name: str = N
       ephemeral=True
     )
     return
-  
+
   # Validate URL format first
   if not is_valid_url(url):
     await interaction.response.send_message("❌ Please provide a valid URL.", ephemeral=True)
     return
-  
+
   await interaction.response.send_message("🔍 Validating stream and adding to favorites...")
-  
+
   try:
     favorites_manager = get_favorites_manager()
     result = favorites_manager.add_favorite(
@@ -323,7 +331,7 @@ async def set_favorite(interaction: discord.Interaction, url: str, name: str = N
       name=name,
       user_id=interaction.user.id
     )
-    
+
     if result['success']:
       await interaction.edit_original_response(
         content=f"✅ Added **{result['station_name']}** as favorite #{result['favorite_number']}"
@@ -332,7 +340,7 @@ async def set_favorite(interaction: discord.Interaction, url: str, name: str = N
       await interaction.edit_original_response(
         content=f"❌ Failed to add favorite: {result['error']}"
       )
-      
+
   except Exception as e:
     logger.error(f"Error in set_favorite command: {e}")
     await interaction.edit_original_response(
@@ -348,16 +356,16 @@ async def play_favorite(interaction: discord.Interaction, number: int):
   try:
     favorites_manager = get_favorites_manager()
     favorite = favorites_manager.get_favorite_by_number(interaction.guild.id, number)
-    
+
     if not favorite:
       await interaction.response.send_message(f"❌ Favorite #{number} not found.", ephemeral=True)
       return
-    
+
     await interaction.response.send_message(
       f"🎵 Starting favorite #{number}: **{favorite['station_name']}**"
     )
     await play_stream(interaction, favorite['stream_url'])
-    
+
   except Exception as e:
     logger.error(f"Error in play_favorite command: {e}")
     if interaction.response.is_done():
@@ -374,20 +382,20 @@ async def favorites(interaction: discord.Interaction):
   try:
     favorites_manager = get_favorites_manager()
     favorites_list = favorites_manager.get_favorites(interaction.guild.id)
-    
+
     if not favorites_list:
       await interaction.response.send_message(
         "📻 No favorites set for this server yet! Use `/set-favorite` to add some.",
         ephemeral=True
       )
       return
-    
+
     # Create embed and view with buttons
     embed = create_favorites_embed(favorites_list, 0, interaction.guild.name)
     view = FavoritesView(favorites_list, 0)
-    
+
     await interaction.response.send_message(embed=embed, view=view)
-    
+
   except Exception as e:
     logger.error(f"Error in favorites command: {e}")
     await interaction.response.send_message("❌ An error occurred while loading favorites.", ephemeral=True)
@@ -401,10 +409,10 @@ async def list_favorites(interaction: discord.Interaction):
   try:
     favorites_manager = get_favorites_manager()
     favorites_list = favorites_manager.get_favorites(interaction.guild.id)
-    
+
     embed = create_favorites_list_embed(favorites_list, interaction.guild.name)
     await interaction.response.send_message(embed=embed)
-    
+
   except Exception as e:
     logger.error(f"Error in list_favorites command: {e}")
     await interaction.response.send_message("❌ An error occurred while listing favorites.", ephemeral=True)
@@ -423,16 +431,16 @@ async def remove_favorite(interaction: discord.Interaction, number: int):
       ephemeral=True
     )
     return
-  
+
   try:
     favorites_manager = get_favorites_manager()
-    
+
     # Check if favorite exists first
     favorite = favorites_manager.get_favorite_by_number(interaction.guild.id, number)
     if not favorite:
       await interaction.response.send_message(f"❌ Favorite #{number} not found.", ephemeral=True)
       return
-    
+
     # Create confirmation view
     view = ConfirmationView("remove", f"favorite #{number}: {favorite['station_name']}")
     await interaction.response.send_message(
@@ -440,10 +448,10 @@ async def remove_favorite(interaction: discord.Interaction, number: int):
       f"This will reorder all subsequent favorites.",
       view=view
     )
-    
+
     # Wait for confirmation
     await view.wait()
-    
+
     if view.confirmed:
       result = favorites_manager.remove_favorite(interaction.guild.id, number)
       if result['success']:
@@ -452,7 +460,7 @@ async def remove_favorite(interaction: discord.Interaction, number: int):
         )
       else:
         await interaction.followup.send(f"❌ Failed to remove favorite: {result['error']}")
-    
+
   except Exception as e:
     logger.error(f"Error in remove_favorite command: {e}")
     if interaction.response.is_done():
@@ -474,17 +482,17 @@ async def setup_roles(interaction: discord.Interaction, role: discord.Role = Non
       ephemeral=True
     )
     return
-  
+
   try:
     # If no parameters provided, show current setup
     if not role and not permission_level:
       role_assignments = perm_manager.get_server_role_assignments(interaction.guild.id)
       available_roles = perm_manager.get_available_permission_roles()
-      
+
       embed = create_role_setup_embed(role_assignments, available_roles, interaction.guild.name)
       await interaction.response.send_message(embed=embed)
       return
-    
+
     # Both parameters required for assignment
     if not role or not permission_level:
       await interaction.response.send_message(
@@ -494,25 +502,25 @@ async def setup_roles(interaction: discord.Interaction, role: discord.Role = Non
         ephemeral=True
       )
       return
-    
+
     # Validate permission level
     available_roles = perm_manager.get_available_permission_roles()
     valid_levels = [r['role_name'] for r in available_roles]
-    
+
     if permission_level.lower() not in valid_levels:
       await interaction.response.send_message(
         f"❌ Invalid permission level. Available levels: {', '.join(valid_levels)}",
         ephemeral=True
       )
       return
-    
+
     # Assign the role
     success = perm_manager.assign_role_permission(
       guild_id=interaction.guild.id,
       role_id=role.id,
       role_name=permission_level.lower()
     )
-    
+
     if success:
       await interaction.response.send_message(
         f"✅ Assigned role {role.mention} to permission level **{permission_level}**"
@@ -522,7 +530,7 @@ async def setup_roles(interaction: discord.Interaction, role: discord.Role = Non
         "❌ Failed to assign role permission. Please check the permission level is valid.",
         ephemeral=True
       )
-      
+
   except Exception as e:
     logger.error(f"Error in setup_roles command: {e}")
     if interaction.response.is_done():
@@ -627,10 +635,10 @@ async def handle_stream_disconnect(guild: discord.Guild):
   """Handle stream disconnection and clean up state properly"""
   try:
     logger.info(f"[{guild.id}]: Handling stream disconnect")
-    
+
     # Get current state before clearing
     channel = get_state(guild.id, 'text_channel')
-    
+
     # Notify users if possible
     if channel:
       try:
@@ -639,21 +647,22 @@ async def handle_stream_disconnect(guild: discord.Guild):
           await channel.send("🔌 Stream disconnected. Use `/play` to start a new stream!")
       except Exception as e:
         logger.warning(f"[{guild.id}]: Could not send disconnect notification: {e}")
-    
+
     # Ensure voice client is properly disconnected
     voice_client = guild.voice_client
     if voice_client:
       try:
         if voice_client.is_connected():
           await voice_client.disconnect()
+          await voice_client.cleanup()
           logger.info(f"[{guild.id}]: Voice client disconnected")
       except Exception as e:
         logger.warning(f"[{guild.id}]: Error disconnecting voice client: {e}")
-    
+
     # Clear all state for this guild
     clear_state(guild.id)
     logger.info(f"[{guild.id}]: State cleared after disconnect")
-    
+
   except Exception as e:
     logger.error(f"[{guild.id}]: Error in handle_stream_disconnect: {e}")
     # Ensure state is cleared even if other operations fail
@@ -715,17 +724,17 @@ async def play_stream(interaction, url):
 
   # Pipe music stream to FFMpeg
   music_stream = discord.FFmpegPCMAudio(resp, pipe=True, options="-filter:a loudnorm=I=-30:LRA=4:TP=-2")
-  
+
   # Create proper cleanup callback that handles state
   def stream_finished_callback(error):
     if error:
       logger.error(f"Stream finished with error: {error}")
     else:
       logger.info("Stream finished normally")
-    
+
     # Schedule proper cleanup with state management
     asyncio.run_coroutine_threadsafe(handle_stream_disconnect(interaction.guild), bot.loop)
-  
+
   voice_client.play(music_stream, after=stream_finished_callback)
 
   # Everything was successful, lets keep all the data
@@ -753,6 +762,7 @@ async def stop_playback(guild: discord.Guild):
   if voice_client and voice_client.is_connected():
     while voice_client.is_connected():
       await voice_client.disconnect()
+      await voice_client.cleanup()
       logger.debug("Attempting to disconnect client")
       await asyncio.sleep(1)
     logger.info("voice client disconnected")
@@ -770,7 +780,39 @@ async def monitor_metadata():
     active_guild_ids = all_active_guild_ids()
     for guild_id in active_guild_ids:
       logger.info(f"[{guild_id}]: Checking metadata")
+      guild = bot.get_guild(guild_id)
+      channel = get_state(guild_id, 'text_channel')
 
+      # Health checks
+      for health_error in health_monitor.execute(guild_id, get_state(guild_id)):
+        match health_error:
+          case ErrorStates.CLIENT_NOT_IN_CHAT:
+            if channel.permissions_for(guild.me).send_messages:
+              await channel.send("😰 The voice client left unexpectedly, try using /play to resume the stream!")
+            else:
+              logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
+            await stop_playback(guild)
+          case ErrorStates.NO_ACTIVE_STREAM:
+            if channel.permissions_for(guild.me).send_messages:
+              await channel.send("😰 No more active stream, disconnecting")
+            else:
+              logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
+            await stop_playback(guild)
+          case ErrorStates.STREAM_OFFLINE:
+            logger.error(f"[{guild_id}]: The stream went offline: {error}")
+            if channel.permissions_for(guild.me).send_messages:
+              await channel.send("😰 The stream went offline, I gotta go!")
+            else:
+              logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
+            await stop_playback(guild)
+          case ErrorStates.NOT_PLAYING:
+            if channel.permissions_for(guild.me).send_messages:
+              await channel.send("😰 The stream stopped playing unexpectedly")
+            else:
+              logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
+            await stop_playback(guild)
+
+      # Metadata updates
       try:
         logger.debug(f"[{guild_id}]: {get_state(guild_id)}")
         song = get_state(guild_id, 'current_song')
@@ -783,10 +825,6 @@ async def monitor_metadata():
         stationinfo = streamscrobbler.get_server_info(url)
         if stationinfo is None:
           logger.warning(f"[{guild_id}]: Streamscrobbler returned info as None")
-        elif stationinfo['status'] <= 0:
-          logger.info(f"[{guild_id}]: Stream ended, disconnecting stream")
-          logger.debug(stationinfo)
-          raise shout_errors.StreamOffline(f"[{guild_id}]: Stream is offline")
         elif stationinfo['metadata'] is None or stationinfo['metadata'] is False:
           logger.warning(f"[{guild_id}]: Streamscrobbler returned metadata as None from server")
         else:
@@ -802,15 +840,6 @@ async def monitor_metadata():
               logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
           else:
             logger.warning("Received non-string value from server metadata")
-      except shout_errors.StreamOffline as error: # Stream went offline gracefully
-        logger.error(f"[{guild_id}]: The stream went offline: {error}")
-        channel = get_state(guild_id, 'text_channel')
-        guild = bot.get_guild(guild_id)
-        if channel.permissions_for(guild.me).send_messages:
-          await channel.send("😰 The stream went offline, I gotta go!")
-        else:
-          logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
-        await stop_playback(guild)
       except Exception as error: # Something went wrong, let's just close it all out
         logger.error(f"[{guild_id}]: Something went wrong while checking stream metadata: {error}")
         channel = get_state(guild_id, 'text_channel')
@@ -830,7 +859,7 @@ def all_active_guild_ids():
   for guild_id in server_state.keys():
     if not server_state[guild_id]:  # Skip empty state
       continue
-    
+
     # Validate that voice client actually exists and is connected
     guild = bot.get_guild(guild_id)
     if guild and guild.voice_client and guild.voice_client.is_connected():
@@ -838,7 +867,7 @@ def all_active_guild_ids():
     elif server_state[guild_id]:  # State exists but no valid voice client
       logger.warning(f"[{guild_id}]: State exists but no voice client - cleaning up stale state")
       clear_state(guild_id)  # Clean up stale state
-  
+
   return active_ids
 
 # Getter for state of a guild
