@@ -853,20 +853,18 @@ async def monitor_metadata():
     logger.error(f"An unhandled error occurred in the metadata listener: {e}")
 
 
-# Get all ids of guilds that have active streams and valid voice clients
+# Get all ids of guilds that have a valid voice clients or server state
 def all_active_guild_ids():
   active_ids = []
   for guild_id in server_state.keys():
-    if not server_state[guild_id]:  # Skip empty state
+    if server_state[guild_id]:
+      active_ids.append(guild_id)
       continue
 
-    # Validate that voice client actually exists and is connected
     guild = bot.get_guild(guild_id)
-    if guild and guild.voice_client and guild.voice_client.is_connected():
+
+    if guild and guild.voice_client:
       active_ids.append(guild_id)
-    elif server_state[guild_id]:  # State exists but no valid voice client
-      logger.warning(f"[{guild_id}]: State exists but no voice client - cleaning up stale state")
-      clear_state(guild_id)  # Clean up stale state
 
   return active_ids
 
