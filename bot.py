@@ -654,7 +654,6 @@ async def handle_stream_disconnect(guild: discord.Guild):
       try:
         if voice_client.is_connected():
           await voice_client.disconnect()
-          await voice_client.cleanup()
           logger.info(f"[{guild.id}]: Voice client disconnected")
       except Exception as e:
         logger.warning(f"[{guild.id}]: Error disconnecting voice client: {e}")
@@ -762,7 +761,6 @@ async def stop_playback(guild: discord.Guild):
   if voice_client and voice_client.is_connected():
     while voice_client.is_connected():
       await voice_client.disconnect()
-      await voice_client.cleanup()
       logger.debug("Attempting to disconnect client")
       await asyncio.sleep(1)
     logger.info("voice client disconnected")
@@ -840,6 +838,8 @@ async def monitor_metadata():
               logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
           else:
             logger.warning("Received non-string value from server metadata")
+      except shout_errors.StreamOffline:
+        continue
       except Exception as error: # Something went wrong, let's just close it all out
         logger.error(f"[{guild_id}]: Something went wrong while checking stream metadata: {error}")
         channel = get_state(guild_id, 'text_channel')
