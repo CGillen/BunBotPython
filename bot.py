@@ -64,8 +64,8 @@ server_state = {}
 # metadata_listener = Asyncio task for listening to metadata (monitor_metadata())
 # text_channel = Text channel original play command came from
 # start_time = Time the current stream started playing
-# stream_offline_count = Number of times stream status has been checked and found offline
 # cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
+# health_error_count = Int number of times a health error occurred in a row
 
 # Set up logging
 logger = logging.getLogger('discord')
@@ -781,8 +781,23 @@ async def monitor_metadata():
       guild = bot.get_guild(guild_id)
       channel = get_state(guild_id, 'text_channel')
 
+      health_error_counts = get_state(guild_id, 'health_error_count')
+      if not health_error_counts:
+        health_error_counts = HealthMonitor.default_state()
+      prev_health_error_counts = dict(health_error_counts or {})
+
+
       # Health checks
+      # TODO: Break out into separate function
       for health_error in health_monitor.execute(guild_id, get_state(guild_id)):
+        logger.warning(f"[{guild_id}]: Received health error: {health_error}")
+        logger.warning(f"[{guild_id}]: Prev error count: {health_error_counts[health_error]}")
+        # Track how many times this error occurred and only handle it if it's the third time
+        health_error_counts[health_error] += 1
+        if health_error_counts[health_error] < 3:
+          logger.warning(f"[{guild_id}]: {health_error} Has not failed 3 times")
+          continue
+
         match health_error:
           case ErrorStates.CLIENT_NOT_IN_CHAT:
             if channel.permissions_for(guild.me).send_messages:
@@ -797,7 +812,7 @@ async def monitor_metadata():
               logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
             await stop_playback(guild)
           case ErrorStates.STREAM_OFFLINE:
-            logger.error(f"[{guild_id}]: The stream went offline: {error}")
+            logger.error(f"[{guild_id}]: The stream went offline: {health_error}")
             if channel.permissions_for(guild.me).send_messages:
               await channel.send("😰 The stream went offline, I gotta go!")
             else:
@@ -809,6 +824,14 @@ async def monitor_metadata():
             else:
               logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
             await stop_playback(guild)
+
+      # Reset error counts if they didn't change (error didn't fire this round)
+      logger.info(f"[{guild_id}]: checking for changes in previous health errors")
+      for key, value in prev_health_error_counts.items():
+        logger.info(f"[{guild_id}]: {value} == {health_error_counts[key]}?")
+        if health_error_counts[key] == value:
+          health_error_counts[key] = 0
+      set_state(guild_id, 'health_error_count', health_error_counts)
 
       # Metadata updates
       try:
