@@ -1,6 +1,6 @@
 from logging import Logger
 from discord import Client
-import streamscrobbler
+from streamscrobbler import streamscrobbler
 
 from services.state_manager import StateManager
 from services.interfaces import ErrorStates
@@ -21,7 +21,7 @@ class HealthMonitor:
     issues.append(self.state_desync(guild_id, state))
     issues.append(self.station_health(guild_id, state))
 
-    return issues
+    return filter(None, issues)
 
   def state_desync(self, guild_id: int, state: dict):
     try:
@@ -49,28 +49,27 @@ class HealthMonitor:
           return ErrorStates.NOT_PLAYING
 
     except Exception as e:
-        self.logger.debug(f"Could not check state consistency for guild {guild_id}: {e}")
+      self.logger.debug(f"Could not check state consistency for guild {guild_id}: {e}")
 
   def station_health(self, guild_id: int, state: dict):
     try:
-      if not state['stream_offline_count']:
-        state['stream_offline_count'] = 0
-
       stationinfo = streamscrobbler.get_server_info(state['current_stream_url'])
 
       if stationinfo is None:
-        self.logger.warning(f"[{guild_id}]: Streamscrobbler returned info as None")
-      elif not stationinfo['status'] and state['stream_offline_count'] >= 3:
-        state['stream_offline_count']
-        return ErrorStates.STREAM_OFFLINE
+        self.logger.warning(f"[{guild_id}|Health Check]: Streamscrobbler returned info as None")
       elif not stationinfo['status']:
-        state['stream_offline_count'] += 1
-      elif stationinfo['status']:
-        state['stream_offline_count'] = 0
+        self.logger.error(f"[{guild_id}|Health Check]: Streamscrobbler found stream to be offline")
+        return ErrorStates.STREAM_OFFLINE
 
       if not stationinfo['metadata']:
-        self.logger.warning(f"[{guild_id}]: Streamscrobbler returned metadata as None from server")
+        self.logger.warning(f"[{guild_id}|Health Check]: Streamscrobbler returned metadata as None from server")
 
-      pass
     except Exception as e:
-      pass
+      self.logger.debug(f"Could not check health of stream for guild {guild_id}: {e}")
+
+  @staticmethod
+  def default_state():
+    state = {}
+    for error in ErrorStates:
+      state[error] = 0
+    return state
