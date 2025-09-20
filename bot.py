@@ -791,11 +791,10 @@ async def monitor_metadata():
       # TODO: Break out into separate function
       for health_error in health_monitor.execute(guild_id, get_state(guild_id)):
         logger.warning(f"[{guild_id}]: Received health error: {health_error}")
-        logger.warning(f"[{guild_id}]: Prev error count: {health_error_counts[health_error]}")
         # Track how many times this error occurred and only handle it if it's the third time
         health_error_counts[health_error] += 1
+        logger.warning(f"[{guild_id}]: {health_error} Has not failed {health_error_counts[health_error]} times")
         if health_error_counts[health_error] < 3:
-          logger.warning(f"[{guild_id}]: {health_error} Has not failed 3 times")
           continue
 
         match health_error:
@@ -826,9 +825,7 @@ async def monitor_metadata():
             await stop_playback(guild)
 
       # Reset error counts if they didn't change (error didn't fire this round)
-      logger.info(f"[{guild_id}]: checking for changes in previous health errors")
       for key, value in prev_health_error_counts.items():
-        logger.info(f"[{guild_id}]: {value} == {health_error_counts[key]}?")
         if health_error_counts[key] == value:
           health_error_counts[key] = 0
       set_state(guild_id, 'health_error_count', health_error_counts)
@@ -886,6 +883,7 @@ def all_active_guild_ids():
 
     guild = bot.get_guild(guild_id)
 
+    # TODO: bot thinks we have a voice client after a health check disconnect for offline stream
     if guild and guild.voice_client:
       active_ids.append(guild_id)
 
