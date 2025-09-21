@@ -589,6 +589,10 @@ async def on_command_error(interaction: discord.Interaction, error):
 
 def is_valid_url(url):
   return validators.url(url)
+  
+def restart_bot():
+    logger.warning("Red Button pushed!")
+    os.execv(sys.executable, ['python'] + sys.argv)
 
 # Find information about the playing station & send that as an embed to the original text channel
 async def send_song_info(guild_id: int):
@@ -839,7 +843,7 @@ async def monitor_metadata():
           logger.warning("Metadata monitor does not have enough information to check, restarting bot!")
           
           # oh shit lets just close the whole fucking bot
-          os.execv(sys.executable, ['python'] + sys.argv)
+          await restart_bot()
           continue
 
         stationinfo = streamscrobbler.get_server_info(url)
