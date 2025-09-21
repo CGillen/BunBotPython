@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands, tasks
 import asyncio
 import os, datetime
+import sys
 import logging, logging.handlers
 import urllib
 import validators
@@ -109,8 +110,6 @@ async def on_ready():
   logger.info(f"Logged on as {bot.user}")
   logger.info(f"Shard IDS: {bot.shard_ids}")
   logger.info(f"Cluster ID: {bot.cluster_id}")
-
-
 
 ### Custom Checks ###
 
@@ -793,7 +792,7 @@ async def monitor_metadata():
         logger.warning(f"[{guild_id}]: Received health error: {health_error}")
         # Track how many times this error occurred and only handle it if it's the third time
         health_error_counts[health_error] += 1
-        logger.warning(f"[{guild_id}]: {health_error} Has not failed {health_error_counts[health_error]} times")
+        logger.warning(f"[{guild_id}]: {health_error} Has failed {health_error_counts[health_error]} times")
         if health_error_counts[health_error] < 3:
           continue
 
@@ -837,7 +836,8 @@ async def monitor_metadata():
         url = get_state(guild_id, 'current_stream_url')
 
         if url is None:
-          logger.warning("Metadata monitor does not have enough information to check")
+          logger.warning("Metadata monitor does not have enough information to check, restarting bot!")
+          os.execv(sys.executable, ['python'] + sys.argv)
           continue
 
         stationinfo = streamscrobbler.get_server_info(url)
