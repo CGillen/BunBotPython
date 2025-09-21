@@ -135,6 +135,22 @@ def bot_has_channel_permissions(permissions: discord.Permissions):
     return discord.app_commands.checks.check(predicate)
 
 @bot.tree.command(
+    name='restart',
+    description="Restarts the whole bot, bot maintainer use only!"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+@bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+async def retart(interaction: discord.Interaction):
+    if (await bot.is_owner(interaction.user)):
+      await interaction.response.send_message(f"Restarting Bot! You better be freaking sure about this!")
+      logger.info("Daddy Initiated Bot Restart....")
+      await restart_bot()
+    else:
+      logger.info("Pleb tried to restart me....")
+      await interaction.response.send_message(f"Awww look at you, how cute")
+
+
+@bot.tree.command(
     name='play',
     description="Begin playback of a shoutcast/icecast stream"
 )
