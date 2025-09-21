@@ -837,6 +837,8 @@ async def monitor_metadata():
 
         if url is None:
           logger.warning("Metadata monitor does not have enough information to check, restarting bot!")
+          
+          # oh shit lets just close the whole fucking bot
           os.execv(sys.executable, ['python'] + sys.argv)
           continue
 
