@@ -9,6 +9,8 @@ It's designed to play Shoutcast and some Icecast streams. It supports the follow
 - `/song`: Display the current song playing.
 - `/support`: Learn where you can get help with the bot or how to help.
 
+# Requirements
+- `ffmpeg` - [Download](https://ffmpeg.org/download.html)
 
 # Don't want to self-host?
 No problem!
