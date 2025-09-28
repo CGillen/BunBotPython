@@ -712,7 +712,9 @@ async def play_stream(interaction, url):
   logger.info(f"Starting channel {url}")
 
   stationinfo = streamscrobbler.get_server_info(url)
+  ## metadata is the bitrate and current song
   metadata = stationinfo['metadata']
+  ## status is the integer to tell if the server is up or down, 0 is down, 1 is up, 2 is up with metadata
   status = stationinfo['status']
   logger.info(f"metadata: {metadata}, status: {status}")
 
