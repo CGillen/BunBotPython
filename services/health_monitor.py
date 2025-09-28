@@ -26,21 +26,26 @@ class HealthMonitor:
   def state_desync(self, guild_id: int, state: dict):
     try:
       guild = self.bot.get_guild(guild_id)
+      url = state['current_stream_url']
 
       if not guild:
-        return None
+        return ErrorStates.INACTIVE_GUILD
+      if not url:
+        self.logger.warning("we still have a guild, attempting to finish normally")
+        return ErrorStates.STALE_STATE
+
 
       voice_client = guild.voice_client
 
-      if not voice_client and state['current_stream_url']:
-        self.logger.error(f"Client attempting to stream {state['current_stream_url']} but is not in voice chat for guild: {guild_id}")
+      if not voice_client and url:
+        self.logger.error(f"Client attempting to stream {url} but is not in voice chat for guild: {guild_id}")
         return ErrorStates.CLIENT_NOT_IN_CHAT
 
-      if voice_client and not state['current_stream_url']:
+      if voice_client and not url:
         self.logger.error(f"Voice client in voice chat for guild: {guild_id} but no stream chosen")
         return ErrorStates.NO_ACTIVE_STREAM
 
-      if voice_client and state['current_stream_url']:
+      if voice_client and url:
         if not voice_client.is_connected():
           self.logger.error(f"Voice client is disconnected but state says stream is active")
           return ErrorStates.CLIENT_NOT_IN_CHAT
@@ -53,7 +58,7 @@ class HealthMonitor:
 
   def station_health(self, guild_id: int, state: dict):
     try:
-      stationinfo = streamscrobbler.get_server_info(state['current_stream_url'])
+      stationinfo = streamscrobbler.get_server_info(url)
 
       if stationinfo is None:
         self.logger.warning(f"[{guild_id}|Health Check]: Streamscrobbler returned info as None")

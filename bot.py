@@ -589,7 +589,7 @@ async def on_command_error(interaction: discord.Interaction, error):
 
 def is_valid_url(url):
   return validators.url(url)
-  
+
 def restart_bot():
     logger.warning("Red Button pushed!")
     os.execv(sys.executable, ['python'] + sys.argv)
@@ -751,7 +751,7 @@ async def play_stream(interaction, url):
     else:
       logger.info("Stream finished normally")
 
-    # Schedule proper cleanup with state management 
+    # Schedule proper cleanup with state management
     asyncio.run_coroutine_threadsafe(handle_stream_disconnect(interaction.guild), bot.loop)
 
   # if the voice client exists, lets try to play through it.
@@ -859,6 +859,14 @@ async def monitor_metadata():
             else:
               logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
             await stop_playback(guild)
+          case ErrorStates.INACTIVE_GUILD:
+            logger.warning("Desync detected, purging bad state!")
+            url = None
+            clear_state(guild_id)
+          case ErrorStates.STALE_STATE:
+            logger.warning("we still have a guild, attempting to finish normally")
+            await stop_playback(guild)
+
 
       # Reset error counts if they didn't change (error didn't fire this round)
       for key, value in prev_health_error_counts.items():
@@ -873,14 +881,6 @@ async def monitor_metadata():
         url = get_state(guild_id, 'current_stream_url')
 
         if url is None:
-          logger.debug("Metadata monitor does not have enough information to check")
-          # some extra handling for when this happens, old method sucked
-          if guild:
-            logger.warning("we still have a guild, attempting to finish normally")
-            await stop_playback(guild)
-          else:
-            logger.warning("Desync detected, purging bad state!")
-            clear_state(guild_id)
           continue
 
         stationinfo = streamscrobbler.get_server_info(url)
@@ -920,7 +920,7 @@ async def monitor_metadata():
 def all_active_guild_ids():
   active_ids = []
   for guild_id in server_state.keys():
-    # Only consider active if state exists and voice client is connected 
+    # Only consider active if state exists and voice client is connected
     guild = bot.get_guild(guild_id)
     state_active = bool(server_state[guild_id])
     vc_active = guild and guild.voice_client and guild.voice_client.is_connected()
