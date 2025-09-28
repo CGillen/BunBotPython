@@ -26,14 +26,13 @@ class HealthMonitor:
   def state_desync(self, guild_id: int, state: dict):
     try:
       guild = self.bot.get_guild(guild_id)
-      url = state['current_stream_url']
 
+      if not hasattr(state, 'current_stream_url') or not state['current_stream_url']:
+        return ErrorStates.STALE_STATE
       if not guild:
         return ErrorStates.INACTIVE_GUILD
-      if not url:
-        self.logger.warning("we still have a guild, attempting to finish normally")
-        return ErrorStates.STALE_STATE
 
+      url = state['current_stream_url']
 
       voice_client = guild.voice_client
 
@@ -54,9 +53,14 @@ class HealthMonitor:
           return ErrorStates.NOT_PLAYING
 
     except Exception as e:
-      self.logger.debug(f"Could not check state consistency for guild {guild_id}: {e}")
+      self.logger.debug(f"Could not check state consistency for guild {guild_id}: {repr(e)}")
 
   def station_health(self, guild_id: int, state: dict):
+    if not hasattr(state, 'current_stream_url') or not state['current_stream_url']:
+      return None
+
+    url = state['current_stream_url']
+
     try:
       stationinfo = streamscrobbler.get_server_info(url)
 
@@ -70,7 +74,7 @@ class HealthMonitor:
         self.logger.warning(f"[{guild_id}|Health Check]: Streamscrobbler returned metadata as None from server")
 
     except Exception as e:
-      self.logger.debug(f"Could not check health of stream for guild {guild_id}: {e}")
+      self.logger.debug(f"Could not check health of stream for guild {guild_id}: {repr(e)}")
 
   @staticmethod
   def default_state():
