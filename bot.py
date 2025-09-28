@@ -112,12 +112,6 @@ async def on_ready():
 
 ### Custom Checks ###
 
-# Verify bot is not cleaning up from a previous session (TODO)
-async def is_not_cleanup(interaction: discord.Interaction):
-  if get_state(interaction.guild.id, 'cleaning_up'):
-    raise shout_errors.CleaningUp('Bot is still cleaning up from last session')
-  return not get_state(interaction.guild.id, 'cleaning_up')
-
 # Verify bot permissions in the initiating channel
 def bot_has_channel_permissions(permissions: discord.Permissions):
     def predicate(interaction: discord.Interaction):
@@ -139,10 +133,11 @@ def bot_has_channel_permissions(permissions: discord.Permissions):
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
-# @discord.app_commands.check(is_not_cleanup)
 async def play(interaction: discord.Interaction, url: str):
   if not is_valid_url(url):
     raise commands.BadArgument("🙇 I'm sorry, I don't know what that means!")
+  if await is_cleaning_up(interaction):
+    raise shout_errors.CleaningUp('Bot is still cleaning up from last session')
 
   await interaction.response.send_message(f"Starting channel {url}")
   await play_stream(interaction, url)
@@ -205,7 +200,6 @@ async def song(interaction: discord.Interaction):
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
-# @discord.app_commands.check(is_not_cleanup)
 async def refresh(interaction: discord.Interaction):
   if (get_state(interaction.guild.id, 'current_stream_url')):
     await interaction.response.send_message("♻️ Refreshing stream, the bot may skip or leave and re-enter")
@@ -565,6 +559,9 @@ async def on_command_error(interaction: discord.Interaction, error):
   elif isinstance(original_error, shout_errors.NoVoiceClient):
     # There isn't a voice client to operate on
     error_message = "🙇 I'm not playing any music! Please stop harassing me"
+  elif isinstance(original_error, shout_errors.CleaningUp):
+    # The client is still cleaning up after itself
+    error_message = "🗑️ I'm still cleaning up after myself, give me a sec"
   elif isinstance(original_error, discord.app_commands.errors.CommandOnCooldown):
     # Commands are being sent too quickly
     error_message = "🥵 Slow down, I can only handle so much!"
@@ -694,6 +691,7 @@ async def play_stream(interaction, url):
     try:
       logger.info("Attempting to purge stale client")
       await interaction.edit_original_response(content="this is taking a while... don't worry we're still trying to get your stream!")
+      set_state(interaction.guild.id, 'cleaning_up', True)
       await voice_client.disconnect(force=True)
       logger.info("Disconnected stale voice client before starting new stream")
     except Exception as e: # Last ditch effort
@@ -765,6 +763,7 @@ async def play_stream(interaction, url):
 
   # And let the user know what song is playing
   await send_song_info(interaction.guild.id)
+  set_state(interaction.guild.id, 'cleaning_up', False)
 
 
 # Disconnect the bot, close the stream, and reset state
@@ -800,6 +799,7 @@ async def stop_playback(guild: discord.Guild):
   logger.debug(f"Clearing guild state: {get_state(guild.id)}")
   clear_state(guild.id)
   logger.debug(f"Guild state cleared: {get_state(guild.id)}")
+  set_state(guild.id, 'cleaning_up', False)
 
 
 @tasks.loop(seconds = 15)
@@ -955,5 +955,9 @@ def clear_state(guild_id):
   # Just throw it all away, idk, maybe we'll need to close and disconnect stuff later
   server_state[guild_id] = {}
 
+
+# Utility method to check if the bot is cleaning up
+async def is_cleaning_up(interaction: discord.Interaction):
+  return get_state(interaction.guild.id, 'cleaning_up')
 
 bot.run(BOT_TOKEN, log_handler=None)
