@@ -867,7 +867,8 @@ async def monitor_metadata():
       for key, value in prev_health_error_counts.items():
         if health_error_counts[key] == value:
           health_error_counts[key] = 0
-      set_state(guild_id, 'health_error_count', health_error_counts)
+      if get_state(guild_id):
+        set_state(guild_id, 'health_error_count', health_error_counts)
 
       # Metadata updates
       try:

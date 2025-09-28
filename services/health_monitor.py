@@ -27,7 +27,7 @@ class HealthMonitor:
     try:
       guild = self.bot.get_guild(guild_id)
 
-      if not hasattr(state, 'current_stream_url') or not state['current_stream_url']:
+      if not 'current_stream_url' in state or not state['current_stream_url']:
         return ErrorStates.STALE_STATE
       if not guild:
         return ErrorStates.INACTIVE_GUILD
@@ -56,7 +56,7 @@ class HealthMonitor:
       self.logger.debug(f"Could not check state consistency for guild {guild_id}: {repr(e)}")
 
   def station_health(self, guild_id: int, state: dict):
-    if not hasattr(state, 'current_stream_url') or not state['current_stream_url']:
+    if not 'current_stream_url' in state or not state['current_stream_url']:
       return None
 
     url = state['current_stream_url']
