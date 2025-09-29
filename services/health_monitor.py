@@ -1,10 +1,16 @@
+import datetime
 from logging import Logger
+import os
+from dotenv import load_dotenv
 from discord import Client
 from streamscrobbler import streamscrobbler
 
 from services.state_manager import StateManager
 from services.interfaces import ErrorStates
 
+# Seconds since last active user before the bot leaves
+load_dotenv()
+EMPTY_CHANNEL_TIMEOUT = int(os.environ.get('EMPTY_CHANNEL_TIMEOUT', 45*60))
 
 class HealthMonitor:
   def __init__(self, bot: Client, state_manager: StateManager=None, logger: Logger=None):
@@ -20,6 +26,7 @@ class HealthMonitor:
 
     issues.append(self.state_desync(guild_id, state))
     issues.append(self.station_health(guild_id, state))
+    issues.append(self.bot_health(guild_id, state))
 
     return filter(None, issues)
 
@@ -75,6 +82,12 @@ class HealthMonitor:
 
     except Exception as e:
       self.logger.debug(f"Could not check health of stream for guild {guild_id}: {repr(e)}")
+
+  def bot_health(self, guild_id: int, state: dict):
+    last_active_delta = (datetime.datetime.now(datetime.UTC) - state['last_active_user_time']).seconds
+
+    if EMPTY_CHANNEL_TIMEOUT > 0 and last_active_delta >= EMPTY_CHANNEL_TIMEOUT:
+      return ErrorStates.INACTIVE_CHANNEL
 
   @staticmethod
   def default_state():

@@ -64,6 +64,7 @@ server_state = {}
 # metadata_listener = Asyncio task for listening to metadata (monitor_metadata())
 # text_channel = Text channel original play command came from
 # start_time = Time the current stream started playing
+# last_active_user_time = Time the last active user was spotted in the voice channel
 # cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
 # health_error_count = Int number of times a health error occurred in a row
 
@@ -812,6 +813,10 @@ async def monitor_metadata():
       guild = bot.get_guild(guild_id)
       channel = get_state(guild_id, 'text_channel')
 
+      # Update the last time we saw a user in the chat
+      if len(channel.members) > 1:
+        set_state(guild.id, 'last_active_user_time', datetime.datetime.now(datetime.UTC))
+
       health_error_counts = get_state(guild_id, 'health_error_count')
       if not health_error_counts:
         health_error_counts = HealthMonitor.default_state()
@@ -855,11 +860,17 @@ async def monitor_metadata():
               logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
             await stop_playback(guild)
           case ErrorStates.INACTIVE_GUILD:
-            logger.warning("Desync detected, purging bad state!")
+            logger.warning(f"[{guild_id}]: Desync detected, purging bad state!")
             url = None
             clear_state(guild_id)
           case ErrorStates.STALE_STATE:
-            logger.warning("we still have a guild, attempting to finish normally")
+            logger.warning(f"[{guild_id}]: we still have a guild, attempting to finish normally")
+            await stop_playback(guild)
+          case ErrorStates.INACTIVE_CHANNEL:
+            inactivity_delta = (datetime.datetime.now(datetime.UTC) - get_state(guild_id, 'last_active_user_time')).seconds / 60
+            logger.info(f"[{guild_id}]: Voice channel inactive for {inactivity_delta} minutes. Kicking bot")
+            if channel.permissions_for(guild.me).send_messages:
+              await channel.send(f"Where'd everybody go? Putting bot to bed after `{inactivity_delta}` minutes of inactivity in voice channel")
             await stop_playback(guild)
 
 
