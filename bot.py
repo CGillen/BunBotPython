@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands, tasks
 import asyncio
 import os, datetime
+import sys
 import logging, logging.handlers
 import urllib
 import validators
@@ -641,6 +642,10 @@ async def on_command_error(interaction: discord.Interaction, error):
 
 def is_valid_url(url):
   return validators.url(url)
+
+def restart_bot():
+  logger.warning("Red Button Pushed!")
+  os.execv(sys.executable, ['python'] + sys.argv)
 
 # Find information about the playing station & send that as an embed to the original text channel
 async def send_song_info(guild_id: int):
