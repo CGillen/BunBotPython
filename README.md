@@ -21,6 +21,11 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/J3J61BNDZO)
 
 # So what's new?
+- `status and health monitoring system to combat desyncs!`
+- `implemented 3 try backoff system`
+- `better handling for leave`
+- `proper state cleanup on stream end 🎉`
+- `sleepy channels`
 - `Implemented Shoutcast v1! 🎉`
 - `Support embed added!🎉`
 - `Added some checks for permissions or lack thereof`
@@ -34,4 +39,4 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 - `Changed audio receiver library to Discord integrated`
 - `Migrated to Python!`
 - `Hac-I mean added ICY support into urllib.py`
-- `6 Bugs Squashed! 🎉`
+- `13 Bugs Squashed! 🎉`
