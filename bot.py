@@ -292,6 +292,45 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
 
   await interaction.response.send_message("\n".join(resp), ephemeral=True)
 
+# @bot.tree.command(
+#     name='maint',
+#     description="Toggle maintenance mode! (Bot maintainer only)"
+# )
+# @discord.app_commands.checks.cooldown(rate=1, per=5)
+# @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+# async def maint(interaction: discord.Interaction, status: bool = True):
+#     if (await bot.is_owner(interaction.user)):
+#       if (status):
+#         active_guild_ids = all_active_guild_ids()
+#         for guild_id in active_guild_ids:
+#           voice_channel = get_state(guild_id, 'text_channel')
+#           embed_data = {
+#             'title': "Maintenance",
+#             'color': 0xfce053,
+#             'description': f"The bot is entering maintenance mode. Commands and playback will be unavailable until maintenance is complete",
+#             'timestamp': str(datetime.datetime.now(datetime.UTC)),
+#           }
+#           embed = discord.Embed.from_dict(embed_data)
+#           await voice_channel.send(embed=embed)
+#           await stop_playback(bot.get_guild(guild_id))
+#       else:
+#         active_guild_ids = all_active_guild_ids()
+#         for guild_id in active_guild_ids:
+#           voice_channel = get_state(guild_id, 'text_channel')
+#           embed_data = {
+#             'title': "Maintenance",
+#             'color': 0xfce053,
+#             'description': f"Maintenance has concluded.",
+#             'timestamp': str(datetime.datetime.now(datetime.UTC)),
+#           }
+#           embed = discord.Embed.from_dict(embed_data)
+#           await voice_channel.send(embed=embed)
+#         pass
+#       await interaction.response.send_message(f"Now entering maintenance mode")
+#     else:
+#       logger.info("Pleb tried to put me in maintenance mode")
+#       await interaction.response.send_message(f"Awww look at you, how cute")
+
 ### FAVORITES COMMANDS ###
 
 @bot.tree.command(
@@ -929,7 +968,12 @@ def all_active_guild_ids():
   for guild_id in server_state.keys():
     # Only consider active if state exists and voice client is connected
     guild = bot.get_guild(guild_id)
-    state_active = bool(server_state[guild_id])
+
+    # Sometimes we need to exclude some state variables when considering if the guild is active
+    vars_to_exclude = ['cleaning_up']
+    temp_state = {key: value for key, value in server_state[guild_id].items() if key not in vars_to_exclude}
+
+    state_active = bool(temp_state)
     vc_active = guild and guild.voice_client and guild.voice_client.is_connected()
     if state_active or vc_active:
       active_ids.append(guild_id)
