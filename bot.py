@@ -853,7 +853,7 @@ async def monitor_metadata():
       channel = get_state(guild_id, 'text_channel')
 
       # Update the last time we saw a user in the chat
-      if len(channel.members) > 1:
+      if len(guild.voice_client.channel.members) > 1:
         set_state(guild.id, 'last_active_user_time', datetime.datetime.now(datetime.UTC))
 
       health_error_counts = get_state(guild_id, 'health_error_count')
