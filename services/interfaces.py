@@ -16,6 +16,7 @@ class ErrorStates(Enum):
    STREAM_OFFLINE = 'stream_offline'
    STALE_STATE = 'state_state'
    INACTIVE_GUILD = 'inactive_guild'
+   INACTIVE_CHANNEL = 'inactive_channel'
 
 @dataclass
 class State:
