@@ -84,7 +84,10 @@ class HealthMonitor:
       self.logger.debug(f"Could not check health of stream for guild {guild_id}: {repr(e)}")
 
   def bot_health(self, guild_id: int, state: dict):
-    last_active_delta = (datetime.datetime.now(datetime.UTC) - state['last_active_user_time']).seconds
+    if not 'last_active_user_time' in state or not state['last_active_user_time']:
+      return None
+
+    last_active_delta = (datetime.datetime.now(datetime.UTC) - state['last_active_user_time']).total_seconds()
 
     if EMPTY_CHANNEL_TIMEOUT > 0 and last_active_delta >= EMPTY_CHANNEL_TIMEOUT:
       return ErrorStates.INACTIVE_CHANNEL

@@ -853,7 +853,7 @@ async def monitor_metadata():
       channel = get_state(guild_id, 'text_channel')
 
       # Update the last time we saw a user in the chat
-      if len(guild.voice_client.channel.members) > 1:
+      if guild.voice_client is not None and len(guild.voice_client.channel.members) > 1:
         set_state(guild.id, 'last_active_user_time', datetime.datetime.now(datetime.UTC))
 
       health_error_counts = get_state(guild_id, 'health_error_count')
@@ -909,7 +909,7 @@ async def monitor_metadata():
             inactivity_delta = (datetime.datetime.now(datetime.UTC) - get_state(guild_id, 'last_active_user_time')).seconds / 60
             logger.info(f"[{guild_id}]: Voice channel inactive for {inactivity_delta} minutes. Kicking bot")
             if channel.permissions_for(guild.me).send_messages:
-              await channel.send(f"Where'd everybody go? Putting bot to bed after `{inactivity_delta}` minutes of inactivity in voice channel")
+              await channel.send(f"Where'd everybody go? Putting bot to bed after `{math.ceil(inactivity_delta)}` minutes of inactivity in voice channel")
             await stop_playback(guild)
 
 
