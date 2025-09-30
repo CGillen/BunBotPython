@@ -867,7 +867,7 @@ async def stop_playback(guild: discord.Guild):
     kill_ffmpeg_process(guild.id)
     logger.info(f"[{guild.id}]: Killed ffmpeg successfully")
   except Exception as e:
-    logger.debug(f"[{guild.id}]: Error attempting to kill ffmpeg during Clear_state: {e}")
+    logger.debug(f"[{guild.id}]: Error attempting to kill ffmpeg during Stop_playback: {e}")
 
   clear_state(guild.id)
   logger.debug(f"Guild state cleared: {get_state(guild.id)}")
