@@ -4,7 +4,7 @@ import ssl
 import discord
 from discord.ext import commands, tasks
 import asyncio
-import os, datetime
+import os, datetime, signal
 import logging, logging.handlers
 import urllib
 import validators
@@ -693,6 +693,12 @@ async def handle_stream_disconnect(guild: discord.Guild):
       except Exception as e:
         logger.warning(f"[{guild.id}]: Error disconnecting voice client: {e}")
 
+    # Ensure ffmpeg is not left running
+    try:
+      kill_ffmpeg_process(guild.id)
+    except Exception as e:
+      logger.debug(f"[{guild.id}]: Error attempting to kill ffmpeg process: {e}")
+
     # Clear all state for this guild
     clear_state(guild.id)
     logger.info(f"[{guild.id}]: State cleared after disconnect")
@@ -776,6 +782,25 @@ async def play_stream(interaction, url):
 
   # Pipe music stream to FFMpeg
   music_stream = discord.FFmpegPCMAudio(resp, pipe=True, options="-filter:a loudnorm=I=-30:LRA=4:TP=-2")
+  # TODO: add to state_manager
+  # Try to detect and record the ffmpeg subprocess PID so we can clean it up later
+  try:
+    proc = None
+    for attr in ("process", "proc", "_process", "_proc", "_popen"):
+      proc = getattr(music_stream, attr, None)
+      if proc:
+        break
+    pid = None
+    if proc is not None:
+      pid = getattr(proc, 'pid', None)
+      # Some wrappers expose the underlying Popen instance on ._process or .proc
+      if pid is None and hasattr(proc, 'pid'):
+        pid = proc.pid
+    if pid:
+      set_state(interaction.guild.id, 'ffmpeg_process_pid', pid)
+      logger.debug(f"[{interaction.guild.id}]: Recorded ffmpeg PID: {pid}")
+  except Exception as e:
+    logger.debug(f"[{interaction.guild.id}]: Could not record ffmpeg process PID: {e}")
 
   # Create proper cleanup callback that handles state
   def stream_finished_callback(error):
@@ -806,7 +831,7 @@ async def play_stream(interaction, url):
   set_state(interaction.guild.id, 'cleaning_up', False)
 
 
-# Disconnect the bot, close the stream, and reset state
+# Disconnect the bot, close the stream, BAN FFmpeg, and reset state
 async def stop_playback(guild: discord.Guild):
   # Let the bot know we're cleaning up and it needs to wait before any more commands are processed
   set_state(guild.id, 'cleaning_up', True)
@@ -835,8 +860,15 @@ async def stop_playback(guild: discord.Guild):
       except Exception:
         pass
 
-  # Reset the bot for this guild first, then we can do cleanup
+  # Ensure any lingering ffmpeg process is terminated before clearing state
   logger.debug(f"Clearing guild state: {get_state(guild.id)}")
+  try:
+    logger.debug(f"[{guild.id}]: Attempting to kill ffmpeg first")
+    kill_ffmpeg_process(guild.id)
+    logger.info(f"[{guild.id}]: Killed ffmpeg successfully")
+  except Exception as e:
+    logger.debug(f"[{guild.id}]: Error attempting to kill ffmpeg during Clear_state: {e}")
+
   clear_state(guild.id)
   logger.debug(f"Guild state cleared: {get_state(guild.id)}")
   set_state(guild.id, 'cleaning_up', False)
@@ -1022,6 +1054,48 @@ def set_state(guild_id, var, val):
 def clear_state(guild_id):
   # Just throw it all away, idk, maybe we'll need to close and disconnect stuff later
   server_state[guild_id] = {}
+
+# TODO: maybe add these checks to health monitor
+def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
+  """Attempt to terminate a recorded ffmpeg process for the guild.
+  This checks `ffmpeg_process_pid` in the guild state and tries to terminate it.
+  Uses psutil when available for safer termination; otherwise falls back to os.kill.
+  """
+  pid = None
+  try:
+    pid = get_state(guild_id, 'ffmpeg_process_pid')
+  except Exception:
+    pid = None
+
+  if not pid:
+    return False
+
+  # Prefer psutil if installed
+  try:
+    import psutil
+    try:
+      p = psutil.Process(int(pid))
+      if p.is_running():
+        p.terminate()
+        try:
+          p.wait(timeout=timeout)
+        except psutil.TimeoutExpired:
+          p.kill()
+      return True
+    except psutil.NoSuchProcess:
+      return False
+  except Exception:
+    # Fallback: os.kill
+    try:
+      # On Windows, SIGTERM is emulated; on POSIX this sends SIGTERM
+      os.kill(int(pid), signal.SIGTERM)
+    except Exception:
+      try:
+        sigkill = getattr(signal, 'SIGKILL', signal.SIGTERM)
+        os.kill(int(pid), sigkill)
+      except Exception:
+        return False
+    return True
 
 
 # Utility method to check if the bot is cleaning up
