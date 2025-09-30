@@ -939,7 +939,7 @@ async def monitor_metadata():
         if url is None:
           continue
         # If one of the health checks fail this will return the failed error. If we errored then the rest of this doesn't matter
-        if await run_health_checks():
+        if await run_health_checks(guild_id):
           continue
 
         stationinfo = streamscrobbler.get_server_info(url)
