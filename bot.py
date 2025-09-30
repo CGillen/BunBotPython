@@ -864,6 +864,7 @@ async def monitor_metadata():
 
       # Health checks
       # TODO: Break out into separate function
+      errored = False
       for health_error in health_monitor.execute(guild_id, get_state(guild_id)):
         logger.warning(f"[{guild_id}]: Received health error: {health_error}")
         # Track how many times this error occurred and only handle it if it's the third time
@@ -871,6 +872,7 @@ async def monitor_metadata():
         logger.warning(f"[{guild_id}]: {health_error} Has failed {health_error_counts[health_error]} times")
         if health_error_counts[health_error] < 3:
           continue
+        errored = True
 
         match health_error:
           case ErrorStates.CLIENT_NOT_IN_CHAT:
@@ -906,12 +908,13 @@ async def monitor_metadata():
             logger.warning(f"[{guild_id}]: we still have a guild, attempting to finish normally")
             await stop_playback(guild)
           case ErrorStates.INACTIVE_CHANNEL:
-            inactivity_delta = (datetime.datetime.now(datetime.UTC) - get_state(guild_id, 'last_active_user_time')).seconds / 60
+            inactivity_delta = (datetime.datetime.now(datetime.UTC) - get_state(guild_id, 'last_active_user_time')).total_seconds() / 60
             logger.info(f"[{guild_id}]: Voice channel inactive for {inactivity_delta} minutes. Kicking bot")
             if channel.permissions_for(guild.me).send_messages:
               await channel.send(f"Where'd everybody go? Putting bot to bed after `{math.ceil(inactivity_delta)}` minutes of inactivity in voice channel")
             await stop_playback(guild)
-
+      if errored:
+        continue
 
       # Reset error counts if they didn't change (error didn't fire this round)
       for key, value in prev_health_error_counts.items():
@@ -971,7 +974,7 @@ def all_active_guild_ids():
 
     # Sometimes we need to exclude some state variables when considering if the guild is active
     vars_to_exclude = ['cleaning_up']
-    temp_state = {key: value for key, value in server_state[guild_id].items() if key not in vars_to_exclude}
+    temp_state = {key: value for key, value in get_state(guild_id).items() if key not in vars_to_exclude}
 
     state_active = bool(temp_state)
     vc_active = guild and guild.voice_client and guild.voice_client.is_connected()
