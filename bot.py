@@ -669,7 +669,7 @@ def get_station_info(url: str):
 async def handle_stream_disconnect(guild: discord.Guild):
   """Handle stream disconnection and clean up state properly"""
   try:
-    logger.info(f"[{guild.id}]: Handling stream disconnect")
+    logger.info(f"[{guild.id}]: checking for stream disconnected")
 
     # Get current state before clearing
     channel = get_state(guild.id, 'text_channel')
@@ -697,11 +697,11 @@ async def handle_stream_disconnect(guild: discord.Guild):
     try:
       kill_ffmpeg_process(guild.id)
     except Exception as e:
-      logger.debug(f"[{guild.id}]: Error attempting to kill ffmpeg process: {e}")
+      logger.debug(f"[{guild.id}]: Error attempting to kill ffmpeg process in Handle_stream_disconnect: {e}")
 
     # Clear all state for this guild
     clear_state(guild.id)
-    logger.info(f"[{guild.id}]: State cleared after disconnect")
+    logger.info(f"[{guild.id}]: stream cleaned successfully!")
 
   except Exception as e:
     logger.error(f"[{guild.id}]: Error in handle_stream_disconnect: {e}")
@@ -800,7 +800,7 @@ async def play_stream(interaction, url):
       set_state(interaction.guild.id, 'ffmpeg_process_pid', pid)
       logger.debug(f"[{interaction.guild.id}]: Recorded ffmpeg PID: {pid}")
   except Exception as e:
-    logger.debug(f"[{interaction.guild.id}]: Could not record ffmpeg process PID: {e}")
+    logger.warning(f"[{interaction.guild.id}]: Could not record ffmpeg process PID: {e}")
 
   # Create proper cleanup callback that handles state
   def stream_finished_callback(error):
@@ -861,7 +861,7 @@ async def stop_playback(guild: discord.Guild):
         pass
 
   # Ensure any lingering ffmpeg process is terminated before clearing state
-  logger.debug(f"Clearing guild state: {get_state(guild.id)}")
+  logger.debug(f"Starting guild state Clean: {get_state(guild.id)}")
   try:
     logger.debug(f"[{guild.id}]: Attempting to kill ffmpeg first")
     kill_ffmpeg_process(guild.id)
