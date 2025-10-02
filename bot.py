@@ -775,7 +775,7 @@ async def play_stream(interaction, url):
       return
 
   # Pipe music stream to FFMpeg
-  music_stream = discord.FFmpegPCMAudio(source=url, options="-filter:a loudnorm=I=-30:LRA=4:TP=-2 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -tls_verify 0")
+  music_stream = discord.FFmpegPCMAudio(source=url, options="-filter:a loudnorm=I=-30:LRA=7:TP=-2 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -tls_verify 0")
 
   # Create proper cleanup callback that handles state
   def stream_finished_callback(error):
