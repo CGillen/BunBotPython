@@ -784,25 +784,26 @@ async def play_stream(interaction, url):
 
   # Pipe music stream to FFMpeg
   music_stream = discord.FFmpegPCMAudio(resp, pipe=True, options="-filter:a loudnorm=I=-30:LRA=4:TP=-2")
+ 
   # TODO: add to state_manager
   # Try to detect and record the ffmpeg subprocess PID so we can clean it up later
   try:
-    proc = None
-    for attr in ("process", "proc", "_process", "_proc", "_popen"):
-      proc = getattr(music_stream, attr, None)
+    proc = None ## default to None, probably not needed.
+    for attr in ("process", "proc", "_process", "_proc", "_popen"): ## look in all these for FFmpeg
+      proc = getattr(music_stream, attr, None) ## try to get it from music_stream, default to None
       if proc:
-        break
-    pid = None
+        break ## we found it, please stop
+
+    pid = None ## default to None, probably not needed.
     if proc is not None:
-      pid = getattr(proc, 'pid', None)
-      # Some wrappers expose the underlying Popen instance on ._process or .proc
+      pid = getattr(proc, 'pid', None) ## great, lets try to get the pid! default is none!
       if pid is None and hasattr(proc, 'pid'):
-        pid = proc.pid
+        pid = proc.pid ## hmm... we still don't have it, try this way instead
     if pid:
-      set_state(interaction.guild.id, 'ffmpeg_process_pid', pid)
+      set_state(interaction.guild.id, 'ffmpeg_process_pid', pid) ## we got it, lets keep it safe
       logger.debug(f"[{interaction.guild.id}]: Recorded ffmpeg PID: {pid}")
   except Exception as e:
-    logger.warning(f"[{interaction.guild.id}]: Could not record ffmpeg process PID: {e}")
+    logger.warning(f"[{interaction.guild.id}]: Could not record ffmpeg process PID: {e}")  ## darn, we tried!
 
   # Create proper cleanup callback that handles state
   def stream_finished_callback(error):
