@@ -1073,6 +1073,7 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
     return False
 
   # Prefer psutil if installed
+  logger.debug("checking for psutil...")
   try:
     import psutil
     try:
@@ -1082,25 +1083,25 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
         logger.debug(f"[{guild_id}]: attempting to terminate ffmpeg process {pid} with psutil")
         try:
           p.wait(timeout=timeout)
-          logger.debug(f"[{guild_id}]: ffmpeg process {pid} terminated gracefully")
+          logger.info(f"[{guild_id}]: ffmpeg process {pid} terminated gracefully")
         except psutil.TimeoutExpired:
           p.kill()
-          logger.debug(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
+          logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
       return True
     except psutil.NoSuchProcess:
       return False
   except Exception:
     # Fallback: os.kill
-    logger.warning(f"[{guild_id}]: psutil not installed, falling back to os.kill for ffmpeg PID {pid}")
+    logger.debug("psutil not installed, falling back to os.kill for ffmpeg PID {pid}")
     try:
       # On Windows, SIGTERM is emulated; on POSIX this sends SIGTERM
       os.kill(int(pid), signal.SIGTERM)
-      logger.debug(f"[{guild_id}]: ffmpeg process {pid} terminated with SIGTERM")
+      logger.info(f"[{guild_id}]: ffmpeg process {pid} gracefully terminated with SIGTERM")
     except Exception:
       try:
         sigkill = getattr(signal, 'SIGKILL', signal.SIGTERM)
         os.kill(int(pid), sigkill)
-        logger.debug(f"[{guild_id}]: ffmpeg process {pid} terminated with SIGKILL")
+        logger.warning(f"[{guild_id}]: ffmpeg process {pid} ungracefully terminated with SIGKILL")
       except Exception:
         return False
     return True
