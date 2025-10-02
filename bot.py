@@ -774,8 +774,16 @@ async def play_stream(interaction, url):
       await interaction.edit_original_response(content="Failed to connect to voice channel. Please try again.")
       return
 
-  # Pipe music stream to FFMpeg
-  music_stream = discord.FFmpegPCMAudio(resp, pipe=True, options="-filter:a loudnorm=I=-30:LRA=4:TP=-2")
+  # Pipe music stream to FFMpeg:
+  
+  # We love adhering to SHOUTcast recommended buffer sizes arounder here! yay!
+  #                  MARKER BYTES REQUIRED FOR PROPER SYNC!
+  # 4080 bytes per tick * 8 chunks = 32640 + 8 marker bytes = 32648 bits buffer (8 chunks)
+  # 4080 bytes per tick * 4 Chunks = 16320 + 4 marker bytes = 16324 bits per analysis (4 chunks)
+  
+  music_stream = discord.FFmpegPCMAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 60 -tls_verify 0")
+  await asyncio.sleep(1)  # Give FFmpeg a moment to process all that
+
 
   # Create proper cleanup callback that handles state
   def stream_finished_callback(error):
