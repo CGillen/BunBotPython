@@ -1062,41 +1062,41 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
   This checks `ffmpeg_process_pid` in the guild state and tries to terminate it.
   Uses psutil when available for safer termination; otherwise falls back to os.kill.
   """
-  pid = None
+  pid = None ## specify default as none, probably not necessary
   try:
-    pid = get_state(guild_id, 'ffmpeg_process_pid')
+    pid = get_state(guild_id, 'ffmpeg_process_pid') ## lets try to get the pid from state
   except Exception:
-    pid = None
+    pid = None ## we couldn't get it, set it to none
 
   if not pid:
     logger.debug(f"[{guild_id}]: No ffmpeg PID recorded, or ffmpeg already purged")
     return False
 
-  # Prefer psutil if installed
+  # Prefer psutil if installed, fallback to os.kill if not available (less graceful)
   logger.debug("checking for psutil...")
   try:
     import psutil
     try:
-      p = psutil.Process(int(pid))
-      if p.is_running():
-        p.terminate()
+      ffmpeg = psutil.Process(int(pid))
+      if ffmpeg.is_running():
+        ffmpeg.terminate() ## let's try to be nice first
         logger.debug(f"[{guild_id}]: attempting to terminate ffmpeg process {pid} with psutil")
         try:
-          p.wait(timeout=timeout)
+          ffmpeg.wait(timeout=timeout) ## wait for it to leave
           logger.info(f"[{guild_id}]: ffmpeg process {pid} terminated gracefully")
         except psutil.TimeoutExpired:
-          p.kill()
+          ffmpeg.kill() ## we tried to be nice, let's kill it.
           logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
       return True
-    except psutil.NoSuchProcess:
+    except psutil.NoSuchProcess: 
+      logger.debug(F"ffmpeg process {pid} exited early, ready to go!")
       return False
   except Exception:
-    # Fallback: os.kill
     logger.debug("psutil not installed, falling back to os.kill for ffmpeg PID {pid}")
     try:
-      # On Windows, SIGTERM is emulated; on POSIX this sends SIGTERM
+      # Try SIGTERM first, fallback to SIGKILL if not available
       os.kill(int(pid), signal.SIGTERM)
-      logger.info(f"[{guild_id}]: ffmpeg process {pid} gracefully terminated with SIGTERM")
+      logger.info(f"[{guild_id}]: ffmpeg process {pid} 'gracefully' terminated with SIGTERM")
     except Exception:
       try:
         sigkill = getattr(signal, 'SIGKILL', signal.SIGTERM)
