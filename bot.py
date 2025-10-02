@@ -697,7 +697,7 @@ async def handle_stream_disconnect(guild: discord.Guild):
     try:
       kill_ffmpeg_process(guild.id)
     except Exception as e:
-      logger.debug(f"[{guild.id}]: Error attempting to kill ffmpeg process in Handle_stream_disconnect: {e}")
+      logger.debug(f"[{guild.id}]: Error attempting to purge ffmpeg in Handle_stream_disconnect: {e}")
 
     # Clear all state for this guild
     clear_state(guild.id)
@@ -726,8 +726,10 @@ async def play_stream(interaction, url):
   if not url:
     logger.warning("No stream currently set, can't play nothing")
     raise shout_errors.NoStreamSelected
+  
   # Connect to voice channel author is currently in
-  voice_channel = interaction.user.voice.channel
+  voice_state = getattr(interaction.user, 'voice', None)   # voice channel check, explicitly set to None if not found for some reason
+  voice_channel = voice_state.channel if voice_state and getattr(voice_state, 'channel', None) else None
   if voice_channel is None:
     raise shout_errors.AuthorNotInVoice
   # Find if voice client is already playing music
@@ -863,11 +865,10 @@ async def stop_playback(guild: discord.Guild):
   # Ensure any lingering ffmpeg process is terminated before clearing state
   logger.debug(f"Starting guild state Clean: {get_state(guild.id)}")
   try:
-    logger.debug(f"[{guild.id}]: Attempting to kill ffmpeg first")
+    logger.debug(f"[{guild.id}]: Purging ffmpeg first")
     kill_ffmpeg_process(guild.id)
-    logger.info(f"[{guild.id}]: Killed ffmpeg successfully")
   except Exception as e:
-    logger.debug(f"[{guild.id}]: Error attempting to kill ffmpeg during Stop_playback: {e}")
+    logger.debug(f"[{guild.id}]: Error attempting to purge ffmpeg during Stop_playback: {e}")
 
   clear_state(guild.id)
   logger.debug(f"Guild state cleared: {get_state(guild.id)}")
@@ -1068,6 +1069,7 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
     pid = None
 
   if not pid:
+    logger.debug(f"[{guild_id}]: No ffmpeg PID recorded, or ffmpeg already purged")
     return False
 
   # Prefer psutil if installed
@@ -1077,22 +1079,28 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
       p = psutil.Process(int(pid))
       if p.is_running():
         p.terminate()
+        logger.debug(f"[{guild_id}]: attempting to terminate ffmpeg process {pid} with psutil")
         try:
           p.wait(timeout=timeout)
+          logger.debug(f"[{guild_id}]: ffmpeg process {pid} terminated gracefully")
         except psutil.TimeoutExpired:
           p.kill()
+          logger.debug(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
       return True
     except psutil.NoSuchProcess:
       return False
   except Exception:
     # Fallback: os.kill
+    logger.warning(f"[{guild_id}]: psutil not installed, falling back to os.kill for ffmpeg PID {pid}")
     try:
       # On Windows, SIGTERM is emulated; on POSIX this sends SIGTERM
       os.kill(int(pid), signal.SIGTERM)
+      logger.debug(f"[{guild_id}]: ffmpeg process {pid} terminated with SIGTERM")
     except Exception:
       try:
         sigkill = getattr(signal, 'SIGKILL', signal.SIGTERM)
         os.kill(int(pid), sigkill)
+        logger.debug(f"[{guild_id}]: ffmpeg process {pid} terminated with SIGKILL")
       except Exception:
         return False
     return True
