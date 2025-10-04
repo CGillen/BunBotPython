@@ -22,7 +22,14 @@ class HealthMonitor(Monitor):
     issues.append(self.bot_health(guild_id, state))
     issues = filter(None, issues)
 
-    return await self.handle_health_errors(guild_id, issues)
+    result = await self.handle_health_errors(guild_id, issues)
+
+    # Update the last time we saw a user in the chat
+    guild = self.client.get_guild(guild_id)
+    if guild.voice_client is not None and len(guild.voice_client.channel.members) > 1:
+      self.bot.set_state(guild.id, 'last_active_user_time', datetime.datetime.now(datetime.UTC))
+
+    return result
 
   async def handle_health_errors(self, guild_id:int, health_errors: list):
     guild = self.client.get_guild(guild_id)

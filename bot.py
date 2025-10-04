@@ -884,14 +884,12 @@ async def stop_playback(guild: discord.Guild):
   set_state(guild.id, 'cleaning_up', False)
 
 
-# UNDO THiS SHIT BACK TO 15 SEC
-@tasks.loop(seconds = 10)
+@tasks.loop(seconds = 15)
 async def heartbeat():
   try:
     logger.debug(f"Running heartbeat for all guilds")
     active_guild_ids = all_active_guild_ids()
     for guild_id in active_guild_ids:
-      guild = bot.get_guild(guild_id)
       url = get_state(guild_id, 'current_stream_url')
 
       if url is None:
@@ -901,10 +899,6 @@ async def heartbeat():
       stationinfo = streamscrobbler.get_server_info(url)
       for monitor in MONITORS:
         await monitor.execute(guild_id=guild_id, state=get_state(guild_id), stationinfo=stationinfo)
-
-      # Update the last time we saw a user in the chat
-      if guild.voice_client is not None and len(guild.voice_client.channel.members) > 1:
-        set_state(guild.id, 'last_active_user_time', datetime.datetime.now(datetime.UTC))
   except Exception as e:
     logger.error(f"An unhandled error occurred in the heartbeat: {e}")
 
