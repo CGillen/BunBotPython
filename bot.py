@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands, tasks
 import asyncio
 import os, datetime
+import sys
 import logging, logging.handlers
 import urllib
 import validators
@@ -127,6 +128,22 @@ def bot_has_channel_permissions(permissions: discord.Permissions):
         missing_permissions = [v for v in missing_permissions.keys() if missing_permissions[v]]
         raise discord.app_commands.BotMissingPermissions(missing_permissions=missing_permissions)
     return discord.app_commands.checks.check(predicate)
+
+@bot.tree.command(
+    name='restart',
+    description="Restarts the whole bot, bot maintainer use only!"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+@bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+async def retart(interaction: discord.Interaction):
+    if (await bot.is_owner(interaction.user)):
+      await interaction.response.send_message(f"Restarting Bot! You better be freaking sure about this!")
+      logger.info("Daddy Initiated Bot Restart....")
+      await restart_bot()
+    else:
+      logger.info("Pleb tried to restart me....")
+      await interaction.response.send_message(f"Awww look at you, how cute")
+
 
 @bot.tree.command(
     name='play',
@@ -625,6 +642,10 @@ async def on_command_error(interaction: discord.Interaction, error):
 
 def is_valid_url(url):
   return validators.url(url)
+
+def restart_bot():
+  logger.warning("Red Button Pushed!")
+  os.execv(sys.executable, ['python'] + sys.argv)
 
 # Find information about the playing station & send that as an embed to the original text channel
 async def send_song_info(guild_id: int):
