@@ -5,12 +5,12 @@ from services.interfaces import Monitor
 
 class MetadataMonitor(Monitor):
   async def execute(self, guild_id: int, state: dict[int, dict[str, str]], stationinfo=None):
-    self.logger.debug(f"[{guild_id}]: {self.get_state(guild_id, state)}")
+    self.logger.debug(f"[{guild_id}]: {bot.get_state(guild_id)}")
 
     guild = self.bot.get_guild(guild_id)
-    channel = self.get_state(guild_id, state, 'text_channel')
-    song = self.get_state(guild_id, state, 'current_song')
-    url = self.get_state(guild_id, state, 'current_stream_url')
+    channel = bot.get_state(guild_id, 'text_channel')
+    song = bot.get_state(guild_id, 'current_song')
+    url = bot.get_state(guild_id, 'current_stream_url')
 
     if url is None:
       return
@@ -26,17 +26,17 @@ class MetadataMonitor(Monitor):
         if isinstance(stationinfo['metadata']['song'], str):
           self.logger.info(f"[{guild_id}]: {stationinfo}")
           if song is None:
-            self.set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
+            bot.set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
             self.logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
           elif song != stationinfo['metadata']['song']:
             if await bot.send_song_info(guild_id):
-              self.set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
+              bot.set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
             self.logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
         else:
           self.logger.warning("Received non-string value from server metadata")
     except Exception as error: # Something went wrong, let's just close it all out
       self.logger.error(f"[{guild_id}]: Something went wrong while checking stream metadata: {error}")
-      channel =  self.get_state(guild_id, 'text_channel')
+      channel =  bot.get_state(guild_id, 'text_channel')
       guild = self.bot.get_guild(guild_id)
       if channel.permissions_for(guild.me).send_messages:
         await channel.send("😰 Something happened to the stream! I uhhh... gotta go!")

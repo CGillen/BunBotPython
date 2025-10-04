@@ -34,32 +34,6 @@ class Monitor(ABC):
   async def execute(self, guild_id: int, state: dict[int, dict[str, str]]):
     pass
 
-    # Getter for state of a guild
-  def get_state(self, guild_id, server_state={}, var=None):
-    # Make sure guild is setup for state
-    if guild_id not in server_state:
-      server_state[guild_id] = {}
-    # Return whole state object if no var name was passed
-    if var is None:
-      return server_state[guild_id]
-    # Make sure var is available in guild state
-    if var not in server_state[guild_id]:
-      return None
-
-    return server_state[guild_id][var]
-
-  # Setter for state of a guild
-  def set_state(self, guild_id, server_state, var, val):
-    # Make sure guild is setup for state
-    if guild_id not in server_state:
-      server_state[guild_id] = {}
-    # Make sure var is available in guild state
-    if var not in server_state[guild_id]:
-      server_state[guild_id][var] = None
-
-    server_state[guild_id][var] = val
-    return val
-
 @dataclass
 class State:
   pass
