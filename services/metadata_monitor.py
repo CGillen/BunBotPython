@@ -1,6 +1,5 @@
 import bot
 
-from services.state_manager import StateManager
 from services.interfaces import Monitor
 
 class MetadataMonitor(Monitor):

@@ -1,12 +1,9 @@
+import math
 import bot
 import datetime
-from logging import Logger
 import os
 from dotenv import load_dotenv
-from discord import Client
-from streamscrobbler import streamscrobbler
 
-from services.state_manager import StateManager
 from services.interfaces import ErrorStates, Monitor
 
 # Seconds since last active user before the bot leaves
@@ -19,13 +16,90 @@ class HealthMonitor(Monitor):
     issues = []
 
     if not state:
-      return issues
+      return True
 
     issues.append(self.state_desync(guild_id, state))
     issues.append(self.station_health(guild_id, state, stationinfo))
     issues.append(self.bot_health(guild_id, state))
+    issues = filter(None, issues)
 
-    return filter(None, issues)
+    return await self.handle_health_errors(guild_id, issues)
+
+  async def handle_health_errors(self, guild_id:int, health_errors: list):
+    guild = self.bot.get_guild(guild_id)
+    channel = bot.get_state(guild_id, 'text_channel')
+
+    health_error_counts = bot.get_state(guild_id, 'health_error_count')
+    if not health_error_counts:
+      health_error_counts = HealthMonitor.default_state()
+    prev_health_error_counts = dict(health_error_counts or {})
+
+    channel = bot.get_state()
+
+    for health_error in health_errors:
+      self.logger.warning(f"[{guild_id}]: Received health error: {health_error}")
+      # Track how many times this error occurred and only handle it if it's the third time
+      health_error_counts[health_error] += 1
+      self.logger.warning(f"[{guild_id}]: Has failed check: '{health_error}' {health_error_counts[health_error]} times")
+      if health_error_counts[health_error] < 3:
+        continue
+
+    match health_error:
+      case ErrorStates.CLIENT_NOT_IN_CHAT:
+        if channel.permissions_for(guild.me).send_messages:
+          await channel.send("😰 The voice client left unexpectedly, try using /play to resume the stream!")
+        else:
+          self.logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
+        await bot.stop_playback(guild)
+        return False
+      case ErrorStates.NO_ACTIVE_STREAM:
+        if channel.permissions_for(guild.me).send_messages:
+          await channel.send("😰 No more active stream, disconnecting")
+        else:
+          self.logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
+        await bot.stop_playback(guild)
+        return False
+      case ErrorStates.STREAM_OFFLINE:
+        self.logger.error(f"[{guild_id}]: The stream went offline: {health_error}")
+        if channel.permissions_for(guild.me).send_messages:
+          await channel.send("😰 The stream went offline, I gotta go!")
+        else:
+          self.logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
+        await bot.top_playback(guild)
+        return False
+      case ErrorStates.NOT_PLAYING:
+        if channel.permissions_for(guild.me).send_messages:
+          await channel.send("😰 The stream stopped playing unexpectedly")
+        else:
+          self.logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
+        await bot.stop_playback(guild)
+        return False
+      case ErrorStates.INACTIVE_GUILD:
+        self.logger.warning(f"[{guild_id}]: Desync detected, purging bad state!")
+        url = None
+        bot.clear_state(guild_id)
+        return False
+      case ErrorStates.STALE_STATE:
+        self.logger.warning(f"[{guild_id}]: we still have a guild, attempting to finish normally")
+        await bot.stop_playback(guild)
+        return False
+      case ErrorStates.INACTIVE_CHANNEL:
+        inactivity_delta = (datetime.datetime.now(datetime.UTC) - bot.get_state(guild_id, 'last_active_user_time')).total_seconds() / 60
+        self.logger.info(f"[{guild_id}]: Voice channel inactive for {inactivity_delta} minutes. Kicking bot")
+        if channel.permissions_for(guild.me).send_messages:
+          await channel.send(f"Where'd everybody go? Putting bot to bed after `{math.ceil(inactivity_delta)}` minutes of inactivity in voice channel")
+        await bot.stop_playback(guild)
+        return False
+
+    # Reset error counts if they didn't change (error didn't fire this round)
+    for key, value in prev_health_error_counts.items():
+      if health_error_counts[key] == value:
+        health_error_counts[key] = 0
+    if bot.get_state(guild_id):
+      bot.set_state(guild_id, 'health_error_count', health_error_counts)
+    return True
+
+
 
   def state_desync(self, guild_id: int, state: dict):
     try:
