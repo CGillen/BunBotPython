@@ -5,7 +5,6 @@ from logging import Logger
 
 from discord import Client
 
-from services.state_manager import StateManager
 
 class HealthStates(Enum):
     """Health status levels for components and systems"""
@@ -25,8 +24,9 @@ class ErrorStates(Enum):
    INACTIVE_CHANNEL = 'inactive_channel'
 
 class Monitor(ABC):
-  def __init__(self, bot: Client, state_manager: StateManager=None, logger: Logger=None, stationinfo=None):
+  def __init__(self, bot, client: Client, state_manager=None, logger: Logger=None, stationinfo=None):
     self.bot = bot
+    self.client = client
     self.state_manager = state_manager
     self.logger = logger
 

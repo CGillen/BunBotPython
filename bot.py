@@ -1,4 +1,5 @@
 import math
+import sys
 import discord
 from discord.ext import commands, tasks
 import asyncio
@@ -6,6 +7,7 @@ import os, datetime, signal
 import logging, logging.handlers
 import urllib
 import validators
+import psutil
 from services.health_monitor import HealthMonitor
 from services.metadata_monitor import MetadataMonitor
 from services.state_manager import StateManager
@@ -93,8 +95,8 @@ logger.addHandler(file_handler)
 
 # Create list of monitors
 MONITORS = [
-  HealthMonitor(bot=bot, logger=logger),
-  MetadataMonitor(bot=bot, logger=logger)
+  HealthMonitor(sys.modules[__name__], client=bot, logger=logger),
+  MetadataMonitor(sys.modules[__name__], client=bot, logger=logger)
 ]
 
 
@@ -882,8 +884,8 @@ async def stop_playback(guild: discord.Guild):
   set_state(guild.id, 'cleaning_up', False)
 
 
-
-@tasks.loop(seconds = 15)
+# UNDO THiS SHIT BACK TO 15 SEC
+@tasks.loop(seconds = 10)
 async def heartbeat():
   try:
     logger.debug(f"Running heartbeat for all guilds")
@@ -971,39 +973,22 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
     logger.debug(f"[{guild_id}]: No ffmpeg PID recorded, or ffmpeg already purged")
     return False
 
-  # Prefer psutil if installed, fallback to os.kill if not available (less graceful)
-  logger.debug("checking for psutil...")
+  # Use psutil to terminate FFMPEG process
   try:
-    import psutil
-    try:
-      ffmpeg = psutil.Process(int(pid))
-      if ffmpeg.is_running():
-        ffmpeg.terminate() ## let's try to be nice first
-        logger.debug(f"[{guild_id}]: attempting to terminate ffmpeg process {pid} with psutil")
-        try:
-          ffmpeg.wait(timeout=timeout) ## wait for it to leave
-          logger.info(f"[{guild_id}]: ffmpeg process {pid} terminated gracefully")
-        except psutil.TimeoutExpired:
-          ffmpeg.kill() ## we tried to be nice, let's kill it.
-          logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
-      return True
-    except psutil.NoSuchProcess:
-      logger.debug(F"ffmpeg process {pid} exited early, ready to go!")
-      return False
-  except Exception:
-    logger.debug("psutil not installed, falling back to os.kill for ffmpeg PID {pid}")
-    try:
-      # Try SIGTERM first, fallback to SIGKILL if not available
-      os.kill(int(pid), signal.SIGTERM)
-      logger.info(f"[{guild_id}]: ffmpeg process {pid} 'gracefully' terminated with SIGTERM")
-    except Exception:
+    ffmpeg = psutil.Process(int(pid))
+    if ffmpeg.is_running():
+      ffmpeg.terminate() ## let's try to be nice first
+      logger.debug(f"[{guild_id}]: attempting to terminate ffmpeg process {pid} with psutil")
       try:
-        sigkill = getattr(signal, 'SIGKILL', signal.SIGTERM)
-        os.kill(int(pid), sigkill)
-        logger.warning(f"[{guild_id}]: ffmpeg process {pid} ungracefully terminated with SIGKILL")
-      except Exception:
-        return False
+        ffmpeg.wait(timeout=timeout) ## wait for it to leave
+        logger.info(f"[{guild_id}]: ffmpeg process {pid} terminated gracefully")
+      except psutil.TimeoutExpired:
+        ffmpeg.kill() ## we tried to be nice, let's kill it.
+        logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
     return True
+  except psutil.NoSuchProcess:
+    logger.debug(F"ffmpeg process {pid} exited early, ready to go!")
+    return False
 
 
 # Utility method to check if the bot is cleaning up
