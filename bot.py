@@ -726,7 +726,7 @@ async def play_stream(interaction, url):
   if not url:
     logger.warning("No stream currently set, can't play nothing")
     raise shout_errors.NoStreamSelected
-  
+
   # Connect to voice channel author is currently in
   voice_state = getattr(interaction.user, 'voice', None)   # voice channel check, explicitly set to None if not found for some reason
   voice_channel = voice_state.channel if voice_state and getattr(voice_state, 'channel', None) else None
@@ -783,12 +783,12 @@ async def play_stream(interaction, url):
       return
 
   # Pipe music stream to FFMpeg:
-  
+
   # We love adhering to SHOUTcast recommended buffer sizes arounder here! yay!
   #                  MARKER BYTES REQUIRED FOR PROPER SYNC!
   # 4080 bytes per tick * 8 chunks = 32640 + 8 marker bytes = 32648 bits buffer (8 chunks)
   # 4080 bytes per tick * 4 Chunks = 16320 + 4 marker bytes = 16324 bits per analysis (4 chunks)
-  
+
   music_stream = discord.FFmpegPCMAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 60 -tls_verify 0")
   await asyncio.sleep(1)  # Give FFmpeg a moment to start
 
@@ -1095,7 +1095,7 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
           ffmpeg.kill() ## we tried to be nice, let's kill it.
           logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
       return True
-    except psutil.NoSuchProcess: 
+    except psutil.NoSuchProcess:
       logger.debug(F"ffmpeg process {pid} exited early, ready to go!")
       return False
   except Exception:
