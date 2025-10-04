@@ -66,6 +66,7 @@ server_state = {}
 # last_active_user_time = Time the last active user was spotted in the voice channel
 # cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
 # health_error_count = Int number of times a health error occurred in a row
+# ffmpeg_process_pid = PID for the FFMPEG process associated with the guild
 
 # Set up logging
 logger = logging.getLogger('discord')
