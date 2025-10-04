@@ -1,6 +1,5 @@
-from http.client import HTTPResponse
 import math
-import ssl
+import sys
 import discord
 from discord.ext import commands, tasks
 import asyncio
@@ -8,8 +7,9 @@ import os, datetime, signal
 import logging, logging.handlers
 import urllib
 import validators
+import psutil
 from services.health_monitor import HealthMonitor
-from services.interfaces import ErrorStates
+from services.metadata_monitor import MetadataMonitor
 from services.state_manager import StateManager
 import shout_errors
 import urllib_hack
@@ -60,13 +60,13 @@ server_state: StateManager
 server_state = {}
 ### Available state variables ###
 # current_stream_url = URL to playing (or about to be played) shoutcast stream
-# current_stream_response = http.client.HTTPResponse object from connecting to shoutcast stream
 # metadata_listener = Asyncio task for listening to metadata (monitor_metadata())
 # text_channel = Text channel original play command came from
 # start_time = Time the current stream started playing
 # last_active_user_time = Time the last active user was spotted in the voice channel
 # cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
 # health_error_count = Int number of times a health error occurred in a row
+# ffmpeg_process_pid = PID for the FFMPEG process associated with the guild
 
 # Set up logging
 logger = logging.getLogger('discord')
@@ -93,8 +93,11 @@ file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
-# Add health monitor
-health_monitor = HealthMonitor(bot=bot, logger=logger)
+# Create list of monitors
+MONITORS = [
+  HealthMonitor(sys.modules[__name__], client=bot, logger=logger),
+  MetadataMonitor(sys.modules[__name__], client=bot, logger=logger)
+]
 
 
 
@@ -105,8 +108,7 @@ async def on_ready():
 
   logger.info("Syncing slash commands")
   await bot.tree.sync()
-  monitor_metadata.start()
-  # safety_checks.start()
+  heartbeat.start()
   logger.info(f"Logged on as {bot.user}")
   logger.info(f"Shard IDS: {bot.shard_ids}")
   logger.info(f"Cluster ID: {bot.cluster_id}")
@@ -831,7 +833,6 @@ async def play_stream(interaction, url):
 
   # Everything was successful, lets keep all the data
   set_state(interaction.guild.id, 'current_stream_url', url)
-  set_state(interaction.guild.id, 'current_stream_response', resp)
   set_state(interaction.guild.id, 'text_channel', interaction.channel)
   set_state(interaction.guild.id, 'start_time', datetime.datetime.now(datetime.UTC))
 
@@ -882,137 +883,23 @@ async def stop_playback(guild: discord.Guild):
   set_state(guild.id, 'cleaning_up', False)
 
 
-async def run_health_checks(guild_id: int):
-  guild = bot.get_guild(guild_id)
-  channel = get_state(guild_id, 'text_channel')
-
-  health_error_counts = get_state(guild_id, 'health_error_count')
-  if not health_error_counts:
-    health_error_counts = HealthMonitor.default_state()
-  prev_health_error_counts = dict(health_error_counts or {})
-
-  # Health checks
-  for health_error in health_monitor.execute(guild_id, get_state(guild_id)):
-    logger.warning(f"[{guild_id}]: Received health error: {health_error}")
-    # Track how many times this error occurred and only handle it if it's the third time
-    health_error_counts[health_error] += 1
-    logger.warning(f"[{guild_id}]: {health_error} Has failed {health_error_counts[health_error]} times")
-    if health_error_counts[health_error] < 3:
-      continue
-
-    match health_error:
-      case ErrorStates.CLIENT_NOT_IN_CHAT:
-        if channel.permissions_for(guild.me).send_messages:
-          await channel.send("😰 The voice client left unexpectedly, try using /play to resume the stream!")
-        else:
-          logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
-        await stop_playback(guild)
-        return health_error
-      case ErrorStates.NO_ACTIVE_STREAM:
-        if channel.permissions_for(guild.me).send_messages:
-          await channel.send("😰 No more active stream, disconnecting")
-        else:
-          logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
-        await stop_playback(guild)
-        return health_error
-      case ErrorStates.STREAM_OFFLINE:
-        logger.error(f"[{guild_id}]: The stream went offline: {health_error}")
-        if channel.permissions_for(guild.me).send_messages:
-          await channel.send("😰 The stream went offline, I gotta go!")
-        else:
-          logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
-        await stop_playback(guild)
-        return health_error
-      case ErrorStates.NOT_PLAYING:
-        if channel.permissions_for(guild.me).send_messages:
-          await channel.send("😰 The stream stopped playing unexpectedly")
-        else:
-          logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
-        await stop_playback(guild)
-        return health_error
-      case ErrorStates.INACTIVE_GUILD:
-        logger.warning(f"[{guild_id}]: Desync detected, purging bad state!")
-        url = None
-        clear_state(guild_id)
-        return health_error
-      case ErrorStates.STALE_STATE:
-        logger.warning(f"[{guild_id}]: we still have a guild, attempting to finish normally")
-        await stop_playback(guild)
-        return health_error
-      case ErrorStates.INACTIVE_CHANNEL:
-        inactivity_delta = (datetime.datetime.now(datetime.UTC) - get_state(guild_id, 'last_active_user_time')).total_seconds() / 60
-        logger.info(f"[{guild_id}]: Voice channel inactive for {inactivity_delta} minutes. Kicking bot")
-        if channel.permissions_for(guild.me).send_messages:
-          await channel.send(f"Where'd everybody go? Putting bot to bed after `{math.ceil(inactivity_delta)}` minutes of inactivity in voice channel")
-        await stop_playback(guild)
-        return health_error
-
-  # Reset error counts if they didn't change (error didn't fire this round)
-  for key, value in prev_health_error_counts.items():
-    if health_error_counts[key] == value:
-      health_error_counts[key] = 0
-  if get_state(guild_id):
-    set_state(guild_id, 'health_error_count', health_error_counts)
-  return False
-
-
 @tasks.loop(seconds = 15)
-async def monitor_metadata():
+async def heartbeat():
   try:
-    logger.debug(f"Checking metadata for all streams")
+    logger.debug(f"Running heartbeat for all guilds")
     active_guild_ids = all_active_guild_ids()
     for guild_id in active_guild_ids:
-      logger.info(f"[{guild_id}]: Checking metadata")
-      guild = bot.get_guild(guild_id)
-      channel = get_state(guild_id, 'text_channel')
+      url = get_state(guild_id, 'current_stream_url')
 
-      # Update the last time we saw a user in the chat
-      if guild.voice_client is not None and len(guild.voice_client.channel.members) > 1:
-        set_state(guild.id, 'last_active_user_time', datetime.datetime.now(datetime.UTC))
-
-      # Metadata updates
-      try:
-        logger.debug(f"[{guild_id}]: {get_state(guild_id)}")
-        song = get_state(guild_id, 'current_song')
-        url = get_state(guild_id, 'current_stream_url')
-
-        if url is None:
-          continue
-        # If one of the health checks fail this will return the failed error. If we errored then the rest of this doesn't matter
-        if await run_health_checks(guild_id):
-          continue
-
-        stationinfo = streamscrobbler.get_server_info(url)
-        if stationinfo is None:
-          logger.warning(f"[{guild_id}]: Streamscrobbler returned info as None")
-        elif stationinfo['metadata'] is None or stationinfo['metadata'] is False:
-          logger.warning(f"[{guild_id}]: Streamscrobbler returned metadata as None from server")
-        else:
-          # Check if the song has changed & announce the new one
-          if isinstance(stationinfo['metadata']['song'], str):
-            logger.info(f"[{guild_id}]: {stationinfo}")
-            if song is None:
-              set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
-              logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
-            elif song != stationinfo['metadata']['song']:
-              if await send_song_info(guild_id):
-                set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
-              logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
-          else:
-            logger.warning("Received non-string value from server metadata")
-      except shout_errors.StreamOffline:
+      if url is None:
         continue
-      except Exception as error: # Something went wrong, let's just close it all out
-        logger.error(f"[{guild_id}]: Something went wrong while checking stream metadata: {error}")
-        channel = get_state(guild_id, 'text_channel')
-        guild = bot.get_guild(guild_id)
-        if channel.permissions_for(guild.me).send_messages:
-          await channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
-        else:
-          logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
-        await stop_playback(guild)
+
+      # Loop through monitors and execute. Let them handle their own shit
+      stationinfo = streamscrobbler.get_server_info(url)
+      for monitor in MONITORS:
+        await monitor.execute(guild_id=guild_id, state=get_state(guild_id), stationinfo=stationinfo)
   except Exception as e:
-    logger.error(f"An unhandled error occurred in the metadata listener: {e}")
+    logger.error(f"An unhandled error occurred in the heartbeat: {e}")
 
 
 # Get all ids of guilds that have a valid voice clients or server state
@@ -1079,39 +966,22 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
     logger.debug(f"[{guild_id}]: No ffmpeg PID recorded, or ffmpeg already purged")
     return False
 
-  # Prefer psutil if installed, fallback to os.kill if not available (less graceful)
-  logger.debug("checking for psutil...")
+  # Use psutil to terminate FFMPEG process
   try:
-    import psutil
-    try:
-      ffmpeg = psutil.Process(int(pid))
-      if ffmpeg.is_running():
-        ffmpeg.terminate() ## let's try to be nice first
-        logger.debug(f"[{guild_id}]: attempting to terminate ffmpeg process {pid} with psutil")
-        try:
-          ffmpeg.wait(timeout=timeout) ## wait for it to leave
-          logger.info(f"[{guild_id}]: ffmpeg process {pid} terminated gracefully")
-        except psutil.TimeoutExpired:
-          ffmpeg.kill() ## we tried to be nice, let's kill it.
-          logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
-      return True
-    except psutil.NoSuchProcess:
-      logger.debug(F"ffmpeg process {pid} exited early, ready to go!")
-      return False
-  except Exception:
-    logger.debug("psutil not installed, falling back to os.kill for ffmpeg PID {pid}")
-    try:
-      # Try SIGTERM first, fallback to SIGKILL if not available
-      os.kill(int(pid), signal.SIGTERM)
-      logger.info(f"[{guild_id}]: ffmpeg process {pid} 'gracefully' terminated with SIGTERM")
-    except Exception:
+    ffmpeg = psutil.Process(int(pid))
+    if ffmpeg.is_running():
+      ffmpeg.terminate() ## let's try to be nice first
+      logger.debug(f"[{guild_id}]: attempting to terminate ffmpeg process {pid} with psutil")
       try:
-        sigkill = getattr(signal, 'SIGKILL', signal.SIGTERM)
-        os.kill(int(pid), sigkill)
-        logger.warning(f"[{guild_id}]: ffmpeg process {pid} ungracefully terminated with SIGKILL")
-      except Exception:
-        return False
+        ffmpeg.wait(timeout=timeout) ## wait for it to leave
+        logger.info(f"[{guild_id}]: ffmpeg process {pid} terminated gracefully")
+      except psutil.TimeoutExpired:
+        ffmpeg.kill() ## we tried to be nice, let's kill it.
+        logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
     return True
+  except psutil.NoSuchProcess:
+    logger.debug(F"ffmpeg process {pid} exited early, ready to go!")
+    return False
 
 
 # Utility method to check if the bot is cleaning up
