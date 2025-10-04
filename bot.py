@@ -4,7 +4,7 @@ import ssl
 import discord
 from discord.ext import commands, tasks
 import asyncio
-import os, datetime
+import os, datetime, signal
 import logging, logging.handlers
 import urllib
 import validators
@@ -669,7 +669,7 @@ def get_station_info(url: str):
 async def handle_stream_disconnect(guild: discord.Guild):
   """Handle stream disconnection and clean up state properly"""
   try:
-    logger.info(f"[{guild.id}]: Handling stream disconnect")
+    logger.info(f"[{guild.id}]: checking for stream disconnected")
 
     # Get current state before clearing
     channel = get_state(guild.id, 'text_channel')
@@ -693,9 +693,15 @@ async def handle_stream_disconnect(guild: discord.Guild):
       except Exception as e:
         logger.warning(f"[{guild.id}]: Error disconnecting voice client: {e}")
 
+    # Ensure ffmpeg is not left running
+    try:
+      kill_ffmpeg_process(guild.id)
+    except Exception as e:
+      logger.debug(f"[{guild.id}]: Error attempting to purge ffmpeg in Handle_stream_disconnect: {e}")
+
     # Clear all state for this guild
     clear_state(guild.id)
-    logger.info(f"[{guild.id}]: State cleared after disconnect")
+    logger.info(f"[{guild.id}]: stream cleaned successfully!")
 
   except Exception as e:
     logger.error(f"[{guild.id}]: Error in handle_stream_disconnect: {e}")
@@ -720,8 +726,10 @@ async def play_stream(interaction, url):
   if not url:
     logger.warning("No stream currently set, can't play nothing")
     raise shout_errors.NoStreamSelected
+
   # Connect to voice channel author is currently in
-  voice_channel = interaction.user.voice.channel
+  voice_state = getattr(interaction.user, 'voice', None)   # voice channel check, explicitly set to None if not found for some reason
+  voice_channel = voice_state.channel if voice_state and getattr(voice_state, 'channel', None) else None
   if voice_channel is None:
     raise shout_errors.AuthorNotInVoice
   # Find if voice client is already playing music
@@ -775,15 +783,33 @@ async def play_stream(interaction, url):
       return
 
   # Pipe music stream to FFMpeg:
-  
+
   # We love adhering to SHOUTcast recommended buffer sizes arounder here! yay!
   #                  MARKER BYTES REQUIRED FOR PROPER SYNC!
   # 4080 bytes per tick * 8 chunks = 32640 + 8 marker bytes = 32648 bits buffer (8 chunks)
   # 4080 bytes per tick * 4 Chunks = 16320 + 4 marker bytes = 16324 bits per analysis (4 chunks)
-  
-  music_stream = discord.FFmpegPCMAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 60 -tls_verify 0")
-  await asyncio.sleep(1)  # Give FFmpeg a moment to process all that
 
+  music_stream = discord.FFmpegPCMAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 60 -tls_verify 0")
+  await asyncio.sleep(1)  # Give FFmpeg a moment to start
+
+  # Try to detect and record the ffmpeg subprocess PID so we can clean it up later
+  try:
+    proc = None ## default to None, probably not needed.
+    for attr in ("process", "proc", "_process", "_proc", "_popen"): ## look in all these for FFmpeg
+      proc = getattr(music_stream, attr, None) ## try to get it from music_stream, default to None
+      if proc:
+        break ## we found it, please stop
+
+    pid = None ## default to None, probably not needed.
+    if proc is not None:
+      pid = getattr(proc, 'pid', None) ## great, lets try to get the pid! default is none!
+      if pid is None and hasattr(proc, 'pid'):
+        pid = proc.pid ## hmm... we still don't have it, try this way instead
+    if pid:
+      set_state(interaction.guild.id, 'ffmpeg_process_pid', pid) ## we got it, lets keep it safe
+      logger.debug(f"[{interaction.guild.id}]: Recorded ffmpeg PID: {pid}")
+  except Exception as e:
+    logger.warning(f"[{interaction.guild.id}]: Could not record ffmpeg process PID: {e}")  ## darn, we tried!
 
   # Create proper cleanup callback that handles state
   def stream_finished_callback(error):
@@ -814,7 +840,7 @@ async def play_stream(interaction, url):
   set_state(interaction.guild.id, 'cleaning_up', False)
 
 
-# Disconnect the bot, close the stream, and reset state
+# Disconnect the bot, close the stream, BAN FFmpeg, and reset state
 async def stop_playback(guild: discord.Guild):
   # Let the bot know we're cleaning up and it needs to wait before any more commands are processed
   set_state(guild.id, 'cleaning_up', True)
@@ -843,8 +869,14 @@ async def stop_playback(guild: discord.Guild):
       except Exception:
         pass
 
-  # Reset the bot for this guild first, then we can do cleanup
-  logger.debug(f"Clearing guild state: {get_state(guild.id)}")
+  # Ensure any lingering ffmpeg process is terminated before clearing state
+  logger.debug(f"Starting guild state Clean: {get_state(guild.id)}")
+  try:
+    logger.debug(f"[{guild.id}]: Purging ffmpeg first")
+    kill_ffmpeg_process(guild.id)
+  except Exception as e:
+    logger.debug(f"[{guild.id}]: Error attempting to purge ffmpeg during Stop_playback: {e}")
+
   clear_state(guild.id)
   logger.debug(f"Guild state cleared: {get_state(guild.id)}")
   set_state(guild.id, 'cleaning_up', False)
@@ -1030,6 +1062,56 @@ def set_state(guild_id, var, val):
 def clear_state(guild_id):
   # Just throw it all away, idk, maybe we'll need to close and disconnect stuff later
   server_state[guild_id] = {}
+
+# TODO: maybe add these checks to health monitor
+def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
+  """Attempt to terminate a recorded ffmpeg process for the guild.
+  This checks `ffmpeg_process_pid` in the guild state and tries to terminate it.
+  Uses psutil when available for safer termination; otherwise falls back to os.kill.
+  """
+  pid = None ## specify default as none, probably not necessary
+  try:
+    pid = get_state(guild_id, 'ffmpeg_process_pid') ## lets try to get the pid from state
+  except Exception:
+    pid = None ## we couldn't get it, set it to none
+
+  if not pid:
+    logger.debug(f"[{guild_id}]: No ffmpeg PID recorded, or ffmpeg already purged")
+    return False
+
+  # Prefer psutil if installed, fallback to os.kill if not available (less graceful)
+  logger.debug("checking for psutil...")
+  try:
+    import psutil
+    try:
+      ffmpeg = psutil.Process(int(pid))
+      if ffmpeg.is_running():
+        ffmpeg.terminate() ## let's try to be nice first
+        logger.debug(f"[{guild_id}]: attempting to terminate ffmpeg process {pid} with psutil")
+        try:
+          ffmpeg.wait(timeout=timeout) ## wait for it to leave
+          logger.info(f"[{guild_id}]: ffmpeg process {pid} terminated gracefully")
+        except psutil.TimeoutExpired:
+          ffmpeg.kill() ## we tried to be nice, let's kill it.
+          logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
+      return True
+    except psutil.NoSuchProcess:
+      logger.debug(F"ffmpeg process {pid} exited early, ready to go!")
+      return False
+  except Exception:
+    logger.debug("psutil not installed, falling back to os.kill for ffmpeg PID {pid}")
+    try:
+      # Try SIGTERM first, fallback to SIGKILL if not available
+      os.kill(int(pid), signal.SIGTERM)
+      logger.info(f"[{guild_id}]: ffmpeg process {pid} 'gracefully' terminated with SIGTERM")
+    except Exception:
+      try:
+        sigkill = getattr(signal, 'SIGKILL', signal.SIGTERM)
+        os.kill(int(pid), sigkill)
+        logger.warning(f"[{guild_id}]: ffmpeg process {pid} ungracefully terminated with SIGKILL")
+      except Exception:
+        return False
+    return True
 
 
 # Utility method to check if the bot is cleaning up
