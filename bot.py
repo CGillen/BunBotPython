@@ -60,7 +60,6 @@ server_state: StateManager
 server_state = {}
 ### Available state variables ###
 # current_stream_url = URL to playing (or about to be played) shoutcast stream
-# current_stream_response = http.client.HTTPResponse object from connecting to shoutcast stream
 # metadata_listener = Asyncio task for listening to metadata (monitor_metadata())
 # text_channel = Text channel original play command came from
 # start_time = Time the current stream started playing
@@ -833,7 +832,6 @@ async def play_stream(interaction, url):
 
   # Everything was successful, lets keep all the data
   set_state(interaction.guild.id, 'current_stream_url', url)
-  set_state(interaction.guild.id, 'current_stream_response', resp)
   set_state(interaction.guild.id, 'text_channel', interaction.channel)
   set_state(interaction.guild.id, 'start_time', datetime.datetime.now(datetime.UTC))
 
