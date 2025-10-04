@@ -1,3 +1,4 @@
+import bot
 import datetime
 from logging import Logger
 import os
@@ -29,13 +30,12 @@ class HealthMonitor(Monitor):
   def state_desync(self, guild_id: int, state: dict):
     try:
       guild = self.bot.get_guild(guild_id)
+      url = bot.get_state(guild_id, 'current_stream_url')
 
-      if not 'current_stream_url' in state or not state['current_stream_url']:
+      if not url:
         return ErrorStates.STALE_STATE
       if not guild:
         return ErrorStates.INACTIVE_GUILD
-
-      url = state['current_stream_url']
 
       voice_client = guild.voice_client
 
@@ -59,10 +59,9 @@ class HealthMonitor(Monitor):
       self.logger.debug(f"Could not check state consistency for guild {guild_id}: {repr(e)}")
 
   def station_health(self, guild_id: int, state: dict, stationinfo=None):
-    if not 'current_stream_url' in state or not state['current_stream_url']:
+    url = bot.get_state(guild_id, 'current_stream_url')
+    if not url:
       return None
-
-    url = state['current_stream_url']
 
     try:
       if stationinfo is None:
@@ -78,10 +77,11 @@ class HealthMonitor(Monitor):
       self.logger.debug(f"Could not check health of stream for guild {guild_id}: {repr(e)}")
 
   def bot_health(self, guild_id: int, state: dict):
-    if not 'last_active_user_time' in state or not state['last_active_user_time']:
+    last_active_user_time = bot.get_state(guild_id, 'last_active_user_time')
+    if not last_active_user_time:
       return None
 
-    last_active_delta = (datetime.datetime.now(datetime.UTC) - state['last_active_user_time']).total_seconds()
+    last_active_delta = (datetime.datetime.now(datetime.UTC) - last_active_user_time).total_seconds()
 
     if EMPTY_CHANNEL_TIMEOUT > 0 and last_active_delta >= EMPTY_CHANNEL_TIMEOUT:
       return ErrorStates.INACTIVE_CHANNEL
