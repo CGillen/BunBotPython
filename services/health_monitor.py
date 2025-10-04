@@ -6,26 +6,22 @@ from discord import Client
 from streamscrobbler import streamscrobbler
 
 from services.state_manager import StateManager
-from services.interfaces import ErrorStates
+from services.interfaces import ErrorStates, Monitor
 
 # Seconds since last active user before the bot leaves
 load_dotenv()
 EMPTY_CHANNEL_TIMEOUT = int(os.environ.get('EMPTY_CHANNEL_TIMEOUT', 45*60))
 
-class HealthMonitor:
-  def __init__(self, bot: Client, state_manager: StateManager=None, logger: Logger=None):
-    self.bot = bot
-    self.state_manager = state_manager
-    self.logger = logger
+class HealthMonitor(Monitor):
 
-  def execute(self, guild_id: int, state: dict[int, dict[str, str]]):
+  async def execute(self, guild_id: int, state: dict[int, dict[str, str]], stationinfo=None):
     issues = []
 
     if not state:
       return issues
 
     issues.append(self.state_desync(guild_id, state))
-    issues.append(self.station_health(guild_id, state))
+    issues.append(self.station_health(guild_id, state, stationinfo))
     issues.append(self.bot_health(guild_id, state))
 
     return filter(None, issues)
@@ -62,15 +58,13 @@ class HealthMonitor:
     except Exception as e:
       self.logger.debug(f"Could not check state consistency for guild {guild_id}: {repr(e)}")
 
-  def station_health(self, guild_id: int, state: dict):
+  def station_health(self, guild_id: int, state: dict, stationinfo=None):
     if not 'current_stream_url' in state or not state['current_stream_url']:
       return None
 
     url = state['current_stream_url']
 
     try:
-      stationinfo = streamscrobbler.get_server_info(url)
-
       if stationinfo is None:
         self.logger.warning(f"[{guild_id}|Health Check]: Streamscrobbler returned info as None")
       elif not stationinfo['status']:

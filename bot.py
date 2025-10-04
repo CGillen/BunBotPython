@@ -10,8 +10,8 @@ import urllib
 import validators
 from services.health_monitor import HealthMonitor
 from services.interfaces import ErrorStates
+from services.metadata_monitor import MetadataMonitor
 from services.state_manager import StateManager
-import shout_errors
 import urllib_hack
 from dotenv import load_dotenv
 from pathlib import Path
@@ -93,8 +93,11 @@ file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
-# Add health monitor
-health_monitor = HealthMonitor(bot=bot, logger=logger)
+# Create list of monitors
+MONITORS = [
+  HealthMonitor(bot=bot, logger=logger),
+  MetadataMonitor(bot=bot, logger=logger)
+]
 
 
 
@@ -105,8 +108,7 @@ async def on_ready():
 
   logger.info("Syncing slash commands")
   await bot.tree.sync()
-  monitor_metadata.start()
-  # safety_checks.start()
+  heartbeat.start()
   logger.info(f"Logged on as {bot.user}")
   logger.info(f"Shard IDS: {bot.shard_ids}")
   logger.info(f"Cluster ID: {bot.cluster_id}")
@@ -957,62 +959,28 @@ async def run_health_checks(guild_id: int):
 
 
 @tasks.loop(seconds = 15)
-async def monitor_metadata():
+async def heartbeat():
   try:
-    logger.debug(f"Checking metadata for all streams")
+    logger.debug(f"Running heartbeat for all guilds")
     active_guild_ids = all_active_guild_ids()
     for guild_id in active_guild_ids:
-      logger.info(f"[{guild_id}]: Checking metadata")
       guild = bot.get_guild(guild_id)
-      channel = get_state(guild_id, 'text_channel')
+      url = get_state(guild_id, 'current_stream_url')
+
+      if url is None:
+        continue
+
+      # Loop through monitors and execute. Let them handle their own shit
+      stationinfo = streamscrobbler.get_server_info(url)
+      for monitor in MONITORS:
+        await monitor.execute(guild_id=guild_id, state=get_state(guild_id), stationinfo=stationinfo)
 
       # Update the last time we saw a user in the chat
       if guild.voice_client is not None and len(guild.voice_client.channel.members) > 1:
         set_state(guild.id, 'last_active_user_time', datetime.datetime.now(datetime.UTC))
 
-      # Metadata updates
-      try:
-        logger.debug(f"[{guild_id}]: {get_state(guild_id)}")
-        song = get_state(guild_id, 'current_song')
-        url = get_state(guild_id, 'current_stream_url')
-
-        if url is None:
-          continue
-        # If one of the health checks fail this will return the failed error. If we errored then the rest of this doesn't matter
-        if await run_health_checks(guild_id):
-          continue
-
-        stationinfo = streamscrobbler.get_server_info(url)
-        if stationinfo is None:
-          logger.warning(f"[{guild_id}]: Streamscrobbler returned info as None")
-        elif stationinfo['metadata'] is None or stationinfo['metadata'] is False:
-          logger.warning(f"[{guild_id}]: Streamscrobbler returned metadata as None from server")
-        else:
-          # Check if the song has changed & announce the new one
-          if isinstance(stationinfo['metadata']['song'], str):
-            logger.info(f"[{guild_id}]: {stationinfo}")
-            if song is None:
-              set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
-              logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
-            elif song != stationinfo['metadata']['song']:
-              if await send_song_info(guild_id):
-                set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
-              logger.info(f"[{guild_id}]: Current station info: {stationinfo}")
-          else:
-            logger.warning("Received non-string value from server metadata")
-      except shout_errors.StreamOffline:
-        continue
-      except Exception as error: # Something went wrong, let's just close it all out
-        logger.error(f"[{guild_id}]: Something went wrong while checking stream metadata: {error}")
-        channel = get_state(guild_id, 'text_channel')
-        guild = bot.get_guild(guild_id)
-        if channel.permissions_for(guild.me).send_messages:
-          await channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
-        else:
-          logger.warning(f"[{guild_id}]: Do not have permission to send messages in {channel}")
-        await stop_playback(guild)
   except Exception as e:
-    logger.error(f"An unhandled error occurred in the metadata listener: {e}")
+    logger.error(f"An unhandled error occurred in the heartbeat: {e}")
 
 
 # Get all ids of guilds that have a valid voice clients or server state
