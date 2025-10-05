@@ -80,7 +80,6 @@ class HealthMonitor(Monitor):
           return False
         case ErrorStates.INACTIVE_GUILD:
           self.logger.warning(f"[{guild_id}]: Desync detected, purging bad state!")
-          url = None
           self.state_manager.clear_state(guild_id)
           return False
         case ErrorStates.STALE_STATE:

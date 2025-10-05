@@ -3,8 +3,10 @@ import sys
 import discord
 from discord.ext import commands, tasks
 import asyncio
-import os, datetime, signal
-import logging, logging.handlers
+import os
+import datetime
+import logging
+import logging.handlers
 import urllib
 import validators
 import psutil
@@ -179,7 +181,7 @@ async def leave(interaction: discord.Interaction, force: bool = False):
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 async def song(interaction: discord.Interaction):
   url = STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url')
-  if (url):
+  if url:
     await interaction.response.send_message("Fetching song title...")
     stationinfo = get_station_info(url)
     if stationinfo['metadata']:
@@ -196,7 +198,7 @@ async def song(interaction: discord.Interaction):
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 async def refresh(interaction: discord.Interaction):
-  if (STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url')):
+  if STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url'):
     await interaction.response.send_message("♻️ Refreshing stream, the bot may skip or leave and re-enter")
     await refresh_stream(interaction)
   else:
@@ -211,7 +213,7 @@ async def support(interaction: discord.Interaction):
   embed_data = {
     'title': "BunBot Support",
     'color': 0xF0E9DE,
-    'description': f"""
+    'description': """
       ❔ Got a question?
          Join us at https://discord.gg/ksZbX723Jn
          The team is always happy to help
@@ -247,7 +249,7 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
   page = min(page, page_count-1)
   page_index = page * per_page
 
-  if (await bot.is_owner(interaction.user)):
+  if await bot.is_owner(interaction.user):
     if id:
       resp.append(id)
       resp.append("Guild:")
@@ -760,7 +762,7 @@ async def play_stream(interaction, url):
 
   # Try to get an http stream connection to the ... stream
   try:
-    resp = urllib.request.urlopen(url, timeout=10)
+    urllib.request.urlopen(url, timeout=10)
   except Exception as error: # if there is an error, let the user know.
     logger.error(f"Failed to connect to stream: {error}")
     await interaction.edit_original_response(content="Error fetching stream. Maybe the stream is down?")

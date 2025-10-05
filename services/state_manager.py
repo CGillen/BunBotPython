@@ -47,7 +47,7 @@ class StateManager:
   # Get all ids of guilds that have a valid voice clients or server state
   def all_active_guild_ids(self):
     active_ids = []
-    for guild_id in self.state.keys():
+    for guild_id, _ in self.state:
       # Only consider active if state exists and voice client is connected
       guild = self.bot.get_guild(guild_id)
 
@@ -62,7 +62,7 @@ class StateManager:
     return active_ids
 
   # TODO: Create a way to dump and load state
-  def save_state():
+  def save_state(self):
     pass
-  def load_state():
+  def load_state(self):
     pass
