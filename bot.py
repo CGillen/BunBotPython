@@ -241,7 +241,7 @@ async def support(interaction: discord.Interaction):
     description="Show debug stats & info"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
-async def debug(interaction: discord.Interaction, page: int = 0, per_page: int = 10, id: str = ''):
+async def debug(interaction: discord.Interaction, page: int = 0, per_page: int = 10, guild_id: str = ''):
   resp = []
   resp.append("==\tGlobal Info\t==")
   page_count = math.ceil(len(bot.guilds) / per_page)
@@ -250,10 +250,10 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
   page_index = page * per_page
 
   if await bot.is_owner(interaction.user):
-    if id:
-      resp.append(id)
+    if guild_id:
+      resp.append(guild_id)
       resp.append("Guild:")
-      guild = next((x for x in bot.guilds if str(x.id) == id), None)
+      guild = next((x for x in bot.guilds if str(x.id) == guild_id), None)
       if guild:
         start_time = STATE_MANAGER.get_state(guild.id, 'start_time')
 
