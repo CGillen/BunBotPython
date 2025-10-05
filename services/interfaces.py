@@ -15,7 +15,7 @@ class ErrorStates(Enum):
    INACTIVE_CHANNEL = 'inactive_channel'
 
 class Monitor(ABC):
-  def __init__(self, bot, client: Client, state_manager: StateManager=None, logger: Logger=None, stationinfo=None):
+  def __init__(self, bot, client: Client, state_manager: StateManager=None, logger: Logger=None):
     self.bot = bot
     self.client = client
     self.state_manager = state_manager

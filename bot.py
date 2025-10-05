@@ -103,9 +103,9 @@ async def on_ready():
   logger.info("Syncing slash commands")
   await bot.tree.sync()
   heartbeat.start()
-  logger.info(f"Logged on as {bot.user}")
-  logger.info(f"Shard IDS: {bot.shard_ids}")
-  logger.info(f"Cluster ID: {bot.cluster_id}")
+  logger.info("Logged on as %s", bot.user)
+  logger.info("Shard IDS: %s", bot.shard_ids)
+  logger.info("Cluster ID: %s", bot.cluster_id)
 
 ### Custom Checks ###
 
@@ -120,7 +120,7 @@ def bot_has_channel_permissions(permissions: discord.Permissions):
         # Figure out which permissions we don't have
         missing_permissions = dict((bot_permissions | permissions) ^ bot_permissions)
         # Find which permissions are missing & raise it as an errror
-        missing_permissions = [v for v in missing_permissions.keys() if missing_permissions[v]]
+        missing_permissions = [v for v, _ in missing_permissions if missing_permissions[v]]
         raise discord.app_commands.BotMissingPermissions(missing_permissions=missing_permissions)
     return discord.app_commands.checks.check(predicate)
 
@@ -163,7 +163,7 @@ async def leave(interaction: discord.Interaction, force: bool = False):
 
     # Automatically clear stale state
     STATE_MANAGER.clear_state(interaction.guild.id)
-    logger.info(f"[{interaction.guild.id}]: Auto-recovered from state desync via /leave")
+    logger.info("[%s]: Auto-recovered from state desync via /leave", interaction.guild.id)
 
     if force:
       await interaction.edit_original_response(content="✅ Force cleared stale bot state. Ready for new streams!")
@@ -187,7 +187,7 @@ async def song(interaction: discord.Interaction):
     if stationinfo['metadata']:
       await interaction.edit_original_response(content=f"Now Playing: 🎶 {stationinfo['metadata']['song']} 🎶")
     else:
-      await interaction.edit_original_response(content=f"Could not retrieve song title. This feature may not be supported by the station")
+      await interaction.edit_original_response(content="Could not retrieve song title. This feature may not be supported by the station")
   else:
     raise shout_errors.NoStreamSelected("🔎 None. There's no song playing. Turn the stream on maybe?")
 
@@ -370,7 +370,7 @@ async def set_favorite(interaction: discord.Interaction, url: str, name: str = N
       )
 
   except Exception as e:
-    logger.error(f"Error in set_favorite command: {e}")
+    logger.error("Error in set_favorite command: %s", e)
     await interaction.edit_original_response(
       content="❌ An unexpected error occurred while adding the favorite."
     )
@@ -395,7 +395,7 @@ async def play_favorite(interaction: discord.Interaction, number: int):
     await play_stream(interaction, favorite['stream_url'])
 
   except Exception as e:
-    logger.error(f"Error in play_favorite command: {e}")
+    logger.error("Error in play_favorite command: %s", e)
     if interaction.response.is_done():
       await interaction.followup.send("❌ An error occurred while playing the favorite.", ephemeral=True)
     else:
@@ -425,7 +425,7 @@ async def favorites(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, view=view)
 
   except Exception as e:
-    logger.error(f"Error in favorites command: {e}")
+    logger.error("Error in favorites command: %s", e)
     await interaction.response.send_message("❌ An error occurred while loading favorites.", ephemeral=True)
 
 @bot.tree.command(
@@ -442,7 +442,7 @@ async def list_favorites(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
   except Exception as e:
-    logger.error(f"Error in list_favorites command: {e}")
+    logger.error("Error in list_favorites command: %s", e)
     await interaction.response.send_message("❌ An error occurred while listing favorites.", ephemeral=True)
 
 @bot.tree.command(
@@ -490,7 +490,7 @@ async def remove_favorite(interaction: discord.Interaction, number: int):
         await interaction.followup.send(f"❌ Failed to remove favorite: {result['error']}")
 
   except Exception as e:
-    logger.error(f"Error in remove_favorite command: {e}")
+    logger.error("Error in remove_favorite command: %s", e)
     if interaction.response.is_done():
       await interaction.followup.send("❌ An error occurred while removing the favorite.", ephemeral=True)
     else:
@@ -560,7 +560,7 @@ async def setup_roles(interaction: discord.Interaction, role: discord.Role = Non
       )
 
   except Exception as e:
-    logger.error(f"Error in setup_roles command: {e}")
+    logger.error("Error in setup_roles command: %s", e)
     if interaction.response.is_done():
       await interaction.followup.send("❌ An error occurred while setting up roles.", ephemeral=True)
     else:
@@ -665,7 +665,7 @@ def get_station_info(url: str):
 async def handle_stream_disconnect(guild: discord.Guild):
   """Handle stream disconnection and clean up state properly"""
   try:
-    logger.info(f"[{guild.id}]: checking for stream disconnected")
+    logger.info("[%s]: checking for stream disconnected", guild.id)
 
     # Get current state before clearing
     channel = STATE_MANAGER.get_state(guild.id, 'text_channel')
@@ -677,7 +677,7 @@ async def handle_stream_disconnect(guild: discord.Guild):
         if channel.permissions_for(guild.me).send_messages:
           await channel.send("🔌 Stream disconnected. Use `/play` to start a new stream!")
       except Exception as e:
-        logger.warning(f"[{guild.id}]: Could not send disconnect notification: {e}")
+        logger.warning("[%s]: Could not send disconnect notification: %s", guild.id, e)
 
     # Ensure voice client is properly disconnected
     voice_client = guild.voice_client
@@ -685,22 +685,22 @@ async def handle_stream_disconnect(guild: discord.Guild):
       try:
         if voice_client.is_connected():
           await voice_client.disconnect()
-          logger.info(f"[{guild.id}]: Voice client disconnected")
+          logger.info("[%s]: Voice client disconnected", guild.id)
       except Exception as e:
-        logger.warning(f"[{guild.id}]: Error disconnecting voice client: {e}")
+        logger.warning("[%s]]: Error disconnecting voice client: %s", guild.id, e)
 
     # Ensure ffmpeg is not left running
     try:
       kill_ffmpeg_process(guild.id)
     except Exception as e:
-      logger.debug(f"[{guild.id}]: Error attempting to purge ffmpeg in Handle_stream_disconnect: {e}")
+      logger.debug("[%s]: Error attempting to purge ffmpeg in Handle_stream_disconnect: %s", guild.id, e)
 
     # Clear all state for this guild
     STATE_MANAGER.clear_state(guild.id)
-    logger.info(f"[{guild.id}]: stream cleaned successfully!")
+    logger.info("[%s]: stream cleaned successfully!", guild.id)
 
   except Exception as e:
-    logger.error(f"[{guild.id}]: Error in handle_stream_disconnect: {e}")
+    logger.error("[%s]: Error in handle_stream_disconnect: %s", guild.id, e)
     # Ensure state is cleared even if other operations fail
     STATE_MANAGER.clear_state(guild.id)
 
@@ -739,21 +739,21 @@ async def play_stream(interaction, url):
       await voice_client.disconnect(force=True)
       logger.info("Disconnected stale voice client before starting new stream")
     except Exception as e: # Last ditch effort
-      logger.warning(f"Error disconnecting stale voice client: {e}")
+      logger.warning("Error disconnecting stale voice client: %s", e)
     voice_client = None
 
   # If a voice client is already playing, raise error
   if voice_client and voice_client.is_playing():
     raise shout_errors.AlreadyPlaying
 
-  logger.info(f"Starting channel {url}")
+  logger.info("Starting channel %s", url)
 
   stationinfo = streamscrobbler.get_server_info(url)
   ## metadata is the bitrate and current song
   metadata = stationinfo['metadata']
   ## status is the integer to tell if the server is up or down, 0 is down, 1 is up, 2 is up with metadata
   status = stationinfo['status']
-  logger.info(f"metadata: {metadata}, status: {status}")
+  logger.info("metadata: %s, status: %s", metadata, status)
 
   # If the stream status isn't >0, it's offline. Exit out early
   if status <= 0:
@@ -763,8 +763,8 @@ async def play_stream(interaction, url):
   # Try to get an http stream connection to the ... stream
   try:
     urllib.request.urlopen(url, timeout=10)
-  except Exception as error: # if there is an error, let the user know.
-    logger.error(f"Failed to connect to stream: {error}")
+  except Exception as e: # if there is an error, let the user know.
+    logger.error("Failed to connect to stream: %s", e)
     await interaction.edit_original_response(content="Error fetching stream. Maybe the stream is down?")
     return
 
@@ -774,7 +774,7 @@ async def play_stream(interaction, url):
       voice_client = await voice_channel.connect()
       logger.info("Connected to voice channel for playback")
     except Exception as e:
-      logger.error(f"Failed to connect to voice channel: {e}")
+      logger.error("Failed to connect to voice channel: %s", e)
       await interaction.edit_original_response(content="Failed to connect to voice channel. Please try again.")
       return
 
@@ -803,14 +803,14 @@ async def play_stream(interaction, url):
         pid = proc.pid ## hmm... we still don't have it, try this way instead
     if pid:
       STATE_MANAGER.set_state(interaction.guild.id, 'ffmpeg_process_pid', pid) ## we got it, lets keep it safe
-      logger.debug(f"[{interaction.guild.id}]: Recorded ffmpeg PID: {pid}")
+      logger.debug("[%s]: Recorded ffmpeg PID: %s", interaction.guild.id, pid)
   except Exception as e:
-    logger.warning(f"[{interaction.guild.id}]: Could not record ffmpeg process PID: {e}")  ## darn, we tried!
+    logger.warning("[%s]: Could not record ffmpeg process PID: %s", interaction.guild.id, e)  ## darn, we tried!
 
   # Create proper cleanup callback that handles state
   def stream_finished_callback(error):
     if error:
-      logger.error(f"Stream finished with error: {error}")
+      logger.error("Stream finished with error: %s", error)
     else:
       logger.info("Stream finished normally")
 
@@ -821,7 +821,7 @@ async def play_stream(interaction, url):
   try:
     voice_client.play(music_stream, after=stream_finished_callback)
   except discord.ClientException as e:
-    logger.error(f"Voice client play failed: {e}")
+    logger.error("Voice client play failed: %s", e)
     await interaction.edit_original_response(content="Failed to start playback. Voice client not connected.")
     return
 
@@ -865,22 +865,22 @@ async def stop_playback(guild: discord.Guild):
         pass
 
   # Ensure any lingering ffmpeg process is terminated before clearing state
-  logger.debug(f"Starting guild state Clean: {STATE_MANAGER.get_state(guild.id)}")
+  logger.debug("Starting guild state Clean: %s", STATE_MANAGER.get_state(guild.id))
   try:
-    logger.debug(f"[{guild.id}]: Purging ffmpeg first")
+    logger.debug("[%s]: Purging ffmpeg first", guild.id)
     kill_ffmpeg_process(guild.id)
   except Exception as e:
-    logger.debug(f"[{guild.id}]: Error attempting to purge ffmpeg during Stop_playback: {e}")
+    logger.debug("[%s]: Error attempting to purge ffmpeg during Stop_playback: %s", guild.id, e)
 
   STATE_MANAGER.clear_state(guild.id)
-  logger.debug(f"Guild state cleared: {STATE_MANAGER.get_state(guild.id)}")
+  logger.debug("Guild state cleared: %s", STATE_MANAGER.get_state(guild.id))
   STATE_MANAGER.set_state(guild.id, 'cleaning_up', False)
 
 
 @tasks.loop(seconds = 15)
 async def heartbeat():
   try:
-    logger.debug(f"Running heartbeat for all guilds")
+    logger.debug("Running heartbeat for all guilds")
     active_guild_ids = STATE_MANAGER.all_active_guild_ids()
     for guild_id in active_guild_ids:
       url = STATE_MANAGER.get_state(guild_id, 'current_stream_url')
@@ -893,7 +893,7 @@ async def heartbeat():
       for monitor in MONITORS:
         await monitor.execute(guild_id=guild_id, state=STATE_MANAGER.get_state(guild_id), stationinfo=stationinfo)
   except Exception as e:
-    logger.error(f"An unhandled error occurred in the heartbeat: {e}")
+    logger.error("An unhandled error occurred in the heartbeat: %s", e)
 
 
 # TODO: maybe add these checks to health monitor
@@ -909,7 +909,7 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
     pid = None ## we couldn't get it, set it to none
 
   if not pid:
-    logger.debug(f"[{guild_id}]: No ffmpeg PID recorded, or ffmpeg already purged")
+    logger.debug("[%s]: No ffmpeg PID recorded, or ffmpeg already purged", guild_id)
     return False
 
   # Use psutil to terminate FFMPEG process
@@ -917,16 +917,16 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
     ffmpeg = psutil.Process(int(pid))
     if ffmpeg.is_running():
       ffmpeg.terminate() ## let's try to be nice first
-      logger.debug(f"[{guild_id}]: attempting to terminate ffmpeg process {pid} with psutil")
+      logger.debug("[%s]: attempting to terminate ffmpeg process %s with psutil", guild_id, pid)
       try:
         ffmpeg.wait(timeout=timeout) ## wait for it to leave
-        logger.info(f"[{guild_id}]: ffmpeg process {pid} terminated gracefully")
+        logger.info("[%s]: ffmpeg process %s terminated gracefully", guild_id, pid)
       except psutil.TimeoutExpired:
         ffmpeg.kill() ## we tried to be nice, let's kill it.
-        logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
+        logger.warning("[%s]: ffmpeg process %s terminated ungracefully due to timeout", guild_id, pid)
     return True
   except psutil.NoSuchProcess:
-    logger.debug(F"ffmpeg process {pid} exited early, ready to go!")
+    logger.debug("[%s]: ffmpeg process %s exited early, ready to go!", guild_id, pid)
     return False
 
 

@@ -126,14 +126,14 @@ class HealthMonitor(Monitor):
 
       if voice_client and url:
         if not voice_client.is_connected():
-          self.logger.error(f"Voice client is disconnected but state says stream is active")
+          self.logger.error("Voice client is disconnected but state says stream is active")
           return ErrorStates.CLIENT_NOT_IN_CHAT
         if not voice_client.is_playing():
-          self.logger.error(f"Voice client is connected but not playing")
+          self.logger.error("Voice client is connected but not playing")
           return ErrorStates.NOT_PLAYING
 
     except Exception as e:
-      self.logger.debug(f"Could not check state consistency for guild {guild_id}: {repr(e)}")
+      self.logger.debug("Could not check state consistency for guild %s: %s", guild_id, repr(e))
 
   def station_health(self, guild_id: int, stationinfo=None):
     url = self.state_manager.get_state(guild_id, 'current_stream_url')
@@ -142,13 +142,13 @@ class HealthMonitor(Monitor):
 
     try:
       if stationinfo is None:
-        self.logger.warning(f"[{guild_id}|Health Check]: Streamscrobbler returned info as None")
+        self.logger.warning("[%s|Health Check]: Streamscrobbler returned info as None", guild_id)
       elif not stationinfo['status']:
-        self.logger.error(f"[{guild_id}|Health Check]: Streamscrobbler found stream to be offline")
+        self.logger.error("[%s|Health Check]: Streamscrobbler found stream to be offline", guild_id)
         return ErrorStates.STREAM_OFFLINE
 
       if not stationinfo['metadata']:
-        self.logger.warning(f"[{guild_id}|Health Check]: Streamscrobbler returned metadata as None from server")
+        self.logger.warning("[%s|Health Check]: Streamscrobbler returned metadata as None from server", guild_id)
 
     except Exception as e:
       self.logger.debug(f"Could not check health of stream for guild {guild_id}: {repr(e)}")
