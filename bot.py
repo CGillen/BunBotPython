@@ -1,28 +1,28 @@
 import math
 import sys
-import discord
-from discord.ext import commands, tasks
 import asyncio
 import os
 import datetime
 import logging
 import logging.handlers
 import urllib
+from pathlib import Path
+
 import validators
 import psutil
+import discord
+from discord.ext import commands, tasks
+from dotenv import load_dotenv
+from streamscrobbler import streamscrobbler
+
 from services.health_monitor import HealthMonitor
 from services.metadata_monitor import MetadataMonitor
 from services.state_manager import StateManager
 import shout_errors
 import urllib_hack
-from dotenv import load_dotenv
-from pathlib import Path
-from streamscrobbler import streamscrobbler
-from database import get_database
 from favorites_manager import get_favorites_manager
-from permissions import get_permission_manager, can_set_favorites_check, can_remove_favorites_check, can_manage_roles_check
-from stream_validator import get_stream_validator
-from input_validator import get_input_validator
+from permissions import get_permission_manager
+
 from ui_components import FavoritesView, create_favorites_embed, create_favorites_list_embed, create_role_setup_embed, ConfirmationView
 
 load_dotenv()  # take environment variables from .env.
