@@ -189,7 +189,7 @@ async def song(interaction: discord.Interaction):
   url = get_state(interaction.guild.id, 'current_stream_url')
   if (url):
     await interaction.response.send_message("Fetching song title...")
-    stationinfo = get_station_info(url)
+    stationinfo = await get_station_info(url)
     if stationinfo['metadata']:
       await interaction.edit_original_response(content=f"Now Playing: 🎶 {stationinfo['metadata']['song']} 🎶")
     else:
@@ -632,7 +632,7 @@ def is_valid_url(url):
 async def send_song_info(guild_id: int):
   url = get_state(guild_id, 'current_stream_url')
   channel = get_state(guild_id, 'text_channel')
-  stationinfo = get_station_info(url)
+  stationinfo = await get_station_info(url)
 
   if not stationinfo['metadata']:
     logger.warning("We didn't get metadata back from the station, can't send the station info")
@@ -655,7 +655,7 @@ async def send_song_info(guild_id: int):
   return await channel.send(embed=embed)
 
 # Retrieve information about the shoutcast stream
-def get_station_info(url: str):
+async def get_station_info(url: str):
   if not url:
     logger.warning("Stream URL not set, can't send song information to channel")
     raise shout_errors.NoStreamSelected()
