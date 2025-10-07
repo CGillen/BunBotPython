@@ -359,7 +359,7 @@ async def set_favorite(interaction: discord.Interaction, url: str, name: str = N
 
   try:
     favorites_manager = get_favorites_manager()
-    result = favorites_manager.add_favorite(
+    result = await favorites_manager.add_favorite(
       guild_id=interaction.guild.id,
       url=url,
       name=name,
@@ -660,7 +660,7 @@ def get_station_info(url: str):
     logger.warning("Stream URL not set, can't send song information to channel")
     raise shout_errors.NoStreamSelected()
 
-  stationinfo = streamscrobbler.get_server_info(url)
+  stationinfo = await streamscrobbler.get_server_info(url)
   if stationinfo['status'] <= 0:
     logger.warning("Stream not up, unable to update song title")
     raise shout_errors.StreamOffline()
@@ -754,7 +754,7 @@ async def play_stream(interaction, url):
 
   logger.info(f"Starting channel {url}")
 
-  stationinfo = streamscrobbler.get_server_info(url)
+  stationinfo = await streamscrobbler.get_server_info(url)
   ## metadata is the bitrate and current song
   metadata = stationinfo['metadata']
   ## status is the integer to tell if the server is up or down, 0 is down, 1 is up, 2 is up with metadata
@@ -895,7 +895,7 @@ async def heartbeat():
         continue
 
       # Loop through monitors and execute. Let them handle their own shit
-      stationinfo = streamscrobbler.get_server_info(url)
+      stationinfo = await streamscrobbler.get_server_info(url)
       for monitor in MONITORS:
         await monitor.execute(guild_id=guild_id, state=get_state(guild_id), stationinfo=stationinfo)
   except Exception as e:
