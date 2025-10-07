@@ -4,8 +4,6 @@ class MetadataMonitor(Monitor):
   async def execute(self, guild_id: int, state: dict[int, dict[str, str]], stationinfo=None):
     self.logger.debug(f"[{guild_id}|Metadata Monitor]: {self.state_manager.get_state(guild_id)}")
 
-    guild = self.client.get_guild(guild_id)
-    channel = self.state_manager.get_state(guild_id, 'text_channel')
     song = self.state_manager.get_state(guild_id, 'current_song')
     url = self.state_manager.get_state(guild_id, 'current_stream_url')
 
@@ -33,10 +31,3 @@ class MetadataMonitor(Monitor):
           self.logger.warning("Received non-string value from server metadata")
     except Exception as error: # Something went wrong, let's just close it all out
       self.logger.error(f"[{guild_id}|Metadata Monitor]: Something went wrong while checking stream metadata: {error}")
-      channel =  self.state_manager.get_state(guild_id, 'text_channel')
-      guild = self.client.get_guild(guild_id)
-      if channel.permissions_for(guild.me).send_messages:
-        await channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
-      else:
-        self.logger.warning(f"[{guild_id}|Metadata Monitor]: Do not have permission to send messages in {channel}")
-      await self.bot.stop_playback(guild)
