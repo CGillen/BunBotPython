@@ -44,4 +44,5 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 - `Migrated to Python!`
 - `Hac-I mean added ICY support into urllib.py`
 - `13 Bugs Squashed! 🎉`
-<sub>SHOUTcast is a registered trademark of NULLsoft, we are in no way affiliated with Nullsoft.</sub>
+  
+<sub>SHOUTcast is a registered trademark of NULLsoft, Bunbot! is in no way affiliated with Nullsoft and their respective copyright holders.</sub>
