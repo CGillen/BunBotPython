@@ -1,6 +1,9 @@
 # Bunbot - Simple Shoutcast Discord Bot!
 Bunbot! was originally a javascript-based bot, but has been rewritten in Python!
 
+Bunbot Currently supports the following Codecs:
+`MP3`, `OPUS`, `VORBIS`, `AAC`, and `AAC+`
+
 
 It's designed to play Shoutcast and some Icecast streams. It supports the following commands:
 - `/play`: Start playing the stream.
@@ -21,6 +24,7 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/J3J61BNDZO)
 
 # So what's new?
+- `more codecs! 🎉` 
 - `status and health monitoring system to combat desyncs!`
 - `implemented 3 try backoff system`
 - `better handling for leave`
@@ -40,3 +44,5 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 - `Migrated to Python!`
 - `Hac-I mean added ICY support into urllib.py`
 - `13 Bugs Squashed! 🎉`
+  
+<sub>SHOUTcast is a registered trademark of NULLsoft, Bunbot! is in no way affiliated with Nullsoft and their respective copyright holders.</sub>
