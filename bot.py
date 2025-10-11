@@ -87,15 +87,22 @@ file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
-### Setup various services ###
-# Create State Manager to manage the state
-STATE_MANAGER = StateManager(bot=bot)
-# Create list of monitors
-MONITORS = [
-  HealthMonitor(sys.modules[__name__], client=bot, state_manager=STATE_MANAGER, logger=logger),
-  MetadataMonitor(sys.modules[__name__], client=bot, state_manager=STATE_MANAGER, logger=logger)
-]
+# TODO: Clean this up?
+STATE_MANAGER = None
+MONITORS = []
 
+async def init():
+  ### Setup various services ###
+  # Create State Manager to manage the state
+  global STATE_MANAGER
+  STATE_MANAGER = await StateManager.create_state_manager(bot=bot)
+  # Create list of monitors
+  global MONITORS
+  MONITORS = [
+    HealthMonitor(sys.modules[__name__], client=bot, state_manager=STATE_MANAGER, logger=logger),
+    MetadataMonitor(sys.modules[__name__], client=bot, state_manager=STATE_MANAGER, logger=logger)
+  ]
+asyncio.run(init())
 
 
 @bot.event
@@ -127,12 +134,20 @@ def bot_has_channel_permissions(permissions: discord.Permissions):
         raise discord.app_commands.BotMissingPermissions(missing_permissions=missing_permissions)
     return discord.app_commands.checks.check(predicate)
 
+def bot_not_in_maintenance():
+  async def predicate(interaction: discord.Interaction):
+    if STATE_MANAGER.get_maint() and not await bot.is_owner(interaction.user):
+      return False
+    return True
+  return discord.app_commands.checks.check(predicate)
+
 @bot.tree.command(
     name='play',
     description="Begin playback of a shoutcast/icecast stream"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+@bot_not_in_maintenance()
 async def play(interaction: discord.Interaction, url: str):
   if not is_valid_url(url):
     raise commands.BadArgument("🙇 I'm sorry, I don't know what that means!")
@@ -147,6 +162,7 @@ async def play(interaction: discord.Interaction, url: str):
     description="Remove the bot from the current call"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@bot_not_in_maintenance()
 async def leave(interaction: discord.Interaction, force: bool = False):
   voice_client = interaction.guild.voice_client
   has_state = bool(STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url'))
@@ -184,7 +200,7 @@ async def leave(interaction: discord.Interaction, force: bool = False):
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 async def song(interaction: discord.Interaction):
   url = STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url')
-  if (url):
+  if url:
     await interaction.response.send_message("Fetching song title...")
     stationinfo = await get_station_info(url)
     if stationinfo['metadata']:
@@ -200,8 +216,9 @@ async def song(interaction: discord.Interaction):
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+@bot_not_in_maintenance()
 async def refresh(interaction: discord.Interaction):
-  if (STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url')):
+  if STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url'):
     await interaction.response.send_message("♻️ Refreshing stream, the bot may skip or leave and re-enter")
     await refresh_stream(interaction)
   else:
@@ -216,7 +233,7 @@ async def support(interaction: discord.Interaction):
   embed_data = {
     'title': "BunBot Support",
     'color': 0xF0E9DE,
-    'description': f"""
+    'description': """
       ❔ Got a question?
          Join us at https://discord.gg/ksZbX723Jn
          The team is always happy to help
@@ -252,7 +269,7 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
   page = min(page, page_count-1)
   page_index = page * per_page
 
-  if (await bot.is_owner(interaction.user)):
+  if await bot.is_owner(interaction.user):
     if id:
       resp.append(id)
       resp.append("Guild:")
@@ -291,44 +308,49 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
 
   await interaction.response.send_message("\n".join(resp), ephemeral=True)
 
-# @bot.tree.command(
-#     name='maint',
-#     description="Toggle maintenance mode! (Bot maintainer only)"
-# )
-# @discord.app_commands.checks.cooldown(rate=1, per=5)
-# @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
-# async def maint(interaction: discord.Interaction, status: bool = True):
-#     if (await bot.is_owner(interaction.user)):
-#       if (status):
-#         active_guild_ids = all_active_guild_ids()
-#         for guild_id in active_guild_ids:
-#           voice_channel = STATE_MANAGER.get_state(guild_id, 'text_channel')
-#           embed_data = {
-#             'title': "Maintenance",
-#             'color': 0xfce053,
-#             'description': f"The bot is entering maintenance mode. Commands and playback will be unavailable until maintenance is complete",
-#             'timestamp': str(datetime.datetime.now(datetime.UTC)),
-#           }
-#           embed = discord.Embed.from_dict(embed_data)
-#           await voice_channel.send(embed=embed)
-#           await stop_playback(bot.get_guild(guild_id))
-#       else:
-#         active_guild_ids = all_active_guild_ids()
-#         for guild_id in active_guild_ids:
-#           voice_channel = STATE_MANAGER.get_state(guild_id, 'text_channel')
-#           embed_data = {
-#             'title': "Maintenance",
-#             'color': 0xfce053,
-#             'description': f"Maintenance has concluded.",
-#             'timestamp': str(datetime.datetime.now(datetime.UTC)),
-#           }
-#           embed = discord.Embed.from_dict(embed_data)
-#           await voice_channel.send(embed=embed)
-#         pass
-#       await interaction.response.send_message(f"Now entering maintenance mode")
-#     else:
-#       logger.info("Pleb tried to put me in maintenance mode")
-#       await interaction.response.send_message(f"Awww look at you, how cute")
+@bot.tree.command(
+    name='maint',
+    description="Toggle maintenance mode! (Bot maintainer only)"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+@bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+async def maint(interaction: discord.Interaction, status: bool = True):
+    if await bot.is_owner(interaction.user):
+      if status == STATE_MANAGER.get_maint():
+        await interaction.response.send_message("❌ Given maintenance status matches bot maintenance status. Nothing interesting happens.")
+        return
+
+      await interaction.response.send_message("🛠️ Toggling maintenance mode... please wait")
+      await STATE_MANAGER.set_maint(status=status)
+
+      active_guild_ids = STATE_MANAGER.all_active_guild_ids()
+      for guild_id in active_guild_ids:
+        text_channel = STATE_MANAGER.get_state(guild_id, 'text_channel')
+        if status:
+            embed_data = {
+              'title': "Maintenance",
+              'color': 0xfce053,
+              'description': "The bot is entering maintenance mode. Commands and playback will be unavailable until maintenance is complete",
+              'timestamp': str(datetime.datetime.now(datetime.UTC)),
+            }
+            await stop_playback(bot.get_guild(guild_id))
+        else:
+          embed_data = {
+            'title': "Maintenance",
+            'color': 0xfce053,
+            'description': "Maintenance has concluded.",
+            'timestamp': str(datetime.datetime.now(datetime.UTC)),
+          }
+        embed = discord.Embed.from_dict(embed_data)
+        await text_channel.send(embed=embed)
+      if status:
+        await interaction.edit_original_response(content="👷 Maintenance mode enabled")
+      else:
+        await interaction.edit_original_response(content="👷 Maintenance mode disabled")
+
+    else:
+      logger.info("😂 Pleb tried to put me in maintenance mode")
+      await interaction.response.send_message("Awww look at you, how cute")
 
 ### FAVORITES COMMANDS ###
 

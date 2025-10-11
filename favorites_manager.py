@@ -5,7 +5,7 @@ Handles CRUD operations for radio station favorites with sequential numbering.
 
 import logging
 from typing import List, Dict, Any, Optional
-from database import get_database
+from database.database import get_database
 from stream_validator import get_stream_validator
 from input_validator import get_input_validator
 

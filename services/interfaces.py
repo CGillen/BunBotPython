@@ -2,7 +2,6 @@ from enum import Enum
 from abc import ABC, abstractmethod
 from logging import Logger
 from discord import Client
-from services.state_manager import StateManager
 
 
 class ErrorStates(Enum):
@@ -15,6 +14,8 @@ class ErrorStates(Enum):
    INACTIVE_CHANNEL = 'inactive_channel'
 
 class Monitor(ABC):
+  from services.state_manager import StateManager
+
   def __init__(self, bot, client: Client, state_manager: StateManager=None, logger: Logger=None, stationinfo=None):
     self.bot = bot
     self.client = client
