@@ -26,7 +26,7 @@ class MetadataMonitor(Monitor):
             self.state_manager.set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
             self.logger.info(f"[{guild_id}|Metadata Monitor]: Current station info: {stationinfo}")
           elif song != stationinfo['metadata']['song']:
-            if await self.state_manager.send_song_info(guild_id):
+            if await self.bot.send_song_info(guild_id):
               self.state_manager.set_state(guild_id, 'current_song', stationinfo['metadata']['song'])
             self.logger.info(f"[{guild_id}|Metadata Monitor]: Current station info: {stationinfo}")
         else:
@@ -39,5 +39,5 @@ class MetadataMonitor(Monitor):
         await channel.send("😰 Something happened to the stream! I uhhh... gotta go!")
       else:
         self.logger.warning(f"[{guild_id}|Metadata Monitor]: Do not have permission to send messages in {channel}")
-      await self.state_manager.stop_playback(guild)
+      await self.bot.stop_playback(guild)
     pass
