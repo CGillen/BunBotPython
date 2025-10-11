@@ -1,9 +1,13 @@
 from discord import Client
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from database.models import Base, BotState
 
 class StateManager:
   ### Available state variables ###
   # current_stream_url = URL to playing (or about to be played) shoutcast stream
-  # metadata_listener = Asyncio task for listening to metadata (monitor_metadata())
   # text_channel = Text channel original play command came from
   # start_time = Time the current stream started playing
   # last_active_user_time = Time the last active user was spotted in the voice channel
@@ -13,12 +17,24 @@ class StateManager:
   def __init__(self, bot: Client=None):
     self.bot = bot
     self.state = {}
-    self.maint = False
-    self.load_state()
+    self.bot_state = BotState(id=1, maint=False)
+    self.db_engine = None
+    self.ASYNC_SESSION_LOCAL = None
 
   bot: Client
   state: dict[int, object]
-  maint: bool
+  bot_state: BotState
+
+#TODO: Clean up
+  @classmethod
+  async def create_state_manager(cls, bot: Client=None):
+    self = cls(bot=bot)
+    self.db_engine = create_async_engine("sqlite+aiosqlite:///.db", echo=True)
+    async with self.db_engine.begin() as conn:
+      await conn.run_sync(Base.metadata.create_all)
+    self.ASYNC_SESSION_LOCAL = async_sessionmaker(self.db_engine, expire_on_commit=False)
+    await self.load_state()
+    return self
 
   def get_state(self, guild_id: int=None, var: str=None):
     # Make sure guild is setup for state
@@ -51,9 +67,11 @@ class StateManager:
     self.state[guild_id] = {}
 
   # Update maintenance status
-  def set_maint(self, status: bool):
-    self.maint = status
-    self.save_state()
+  async def set_maint(self, status: bool):
+    self.bot_state.maint = status
+    await self.save_state()
+  def get_maint(self):
+    return self.bot_state.maint
 
   # Get all ids of guilds that have a valid voice clients or server state
   def all_active_guild_ids(self):
@@ -72,8 +90,13 @@ class StateManager:
         active_ids.append(guild_id)
     return active_ids
 
-  # TODO: Create a way to dump and load state
-  def save_state(self):
-    pass
-  def load_state(self):
-    pass
+  async def save_state(self):
+    async with self.ASYNC_SESSION_LOCAL() as session:
+      session.add(self.bot_state)
+      await session.commit()
+  async def load_state(self):
+    async with self.ASYNC_SESSION_LOCAL() as session:
+      stmt = select(BotState).where(BotState.id == 1).limit(1)
+      result = await session.execute(stmt)
+      await session.commit()
+    self.bot_state = result.scalars().first()
