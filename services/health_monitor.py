@@ -17,9 +17,9 @@ class HealthMonitor(Monitor):
     if not state:
       return True
 
-    issues.append(self.state_desync(guild_id, state))
-    issues.append(self.station_health(guild_id, state, stationinfo))
-    issues.append(self.bot_health(guild_id, state))
+    issues.append(self.state_desync(guild_id))
+    issues.append(self.station_health(guild_id, stationinfo))
+    issues.append(self.bot_health(guild_id))
     issues = filter(None, issues)
 
     result = await self.handle_health_errors(guild_id, issues)
@@ -27,15 +27,15 @@ class HealthMonitor(Monitor):
     # Update the last time we saw a user in the chat
     guild = self.client.get_guild(guild_id)
     if guild.voice_client is not None and len(guild.voice_client.channel.members) > 1:
-      self.bot.set_state(guild.id, 'last_active_user_time', datetime.datetime.now(datetime.UTC))
+      self.state_manager.set_state(guild.id, 'last_active_user_time', datetime.datetime.now(datetime.UTC))
 
     return result
 
   async def handle_health_errors(self, guild_id:int, health_errors: list):
     guild = self.client.get_guild(guild_id)
-    channel = self.bot.get_state(guild_id, 'text_channel')
+    channel = self.state_manager.get_state(guild_id, 'text_channel')
 
-    health_error_counts = self.bot.get_state(guild_id, 'health_error_count')
+    health_error_counts = self.state_manager.get_state(guild_id, 'health_error_count')
     if not health_error_counts:
       health_error_counts = HealthMonitor.default_state()
     prev_health_error_counts = dict(health_error_counts or {})
@@ -81,14 +81,14 @@ class HealthMonitor(Monitor):
         case ErrorStates.INACTIVE_GUILD:
           self.logger.warning(f"[{guild_id}]: Desync detected, purging bad state!")
           url = None
-          self.bot.clear_state(guild_id)
+          self.state_manager.clear_state(guild_id)
           return False
         case ErrorStates.STALE_STATE:
           self.logger.warning(f"[{guild_id}]: we still have a guild, attempting to finish normally")
           await self.bot.stop_playback(guild)
           return False
         case ErrorStates.INACTIVE_CHANNEL:
-          inactivity_delta = (datetime.datetime.now(datetime.UTC) - self.bot.get_state(guild_id, 'last_active_user_time')).total_seconds() / 60
+          inactivity_delta = (datetime.datetime.now(datetime.UTC) - self.state_manager.get_state(guild_id, 'last_active_user_time')).total_seconds() / 60
           self.logger.info(f"[{guild_id}]: Voice channel inactive for {inactivity_delta} minutes. Kicking bot")
           if channel.permissions_for(guild.me).send_messages:
             await channel.send(f"Where'd everybody go? Putting bot to bed after `{math.ceil(inactivity_delta)}` minutes of inactivity in voice channel")
@@ -99,16 +99,16 @@ class HealthMonitor(Monitor):
     for key, value in prev_health_error_counts.items():
       if health_error_counts[key] == value:
         health_error_counts[key] = 0
-    if self.bot.get_state(guild_id):
-      self.bot.set_state(guild_id, 'health_error_count', health_error_counts)
+    if self.state_manager.get_state(guild_id):
+      self.state_manager.set_state(guild_id, 'health_error_count', health_error_counts)
     return True
 
 
 
-  def state_desync(self, guild_id: int, state: dict):
+  def state_desync(self, guild_id: int):
     try:
       guild = self.client.get_guild(guild_id)
-      url = self.bot.get_state(guild_id, 'current_stream_url')
+      url = self.state_manager.get_state(guild_id, 'current_stream_url')
 
       if not url:
         return ErrorStates.STALE_STATE
@@ -136,8 +136,8 @@ class HealthMonitor(Monitor):
     except Exception as e:
       self.logger.debug(f"Could not check state consistency for guild {guild_id}: {repr(e)}")
 
-  def station_health(self, guild_id: int, state: dict, stationinfo=None):
-    url = self.bot.get_state(guild_id, 'current_stream_url')
+  def station_health(self, guild_id: int, stationinfo=None):
+    url = self.state_manager.get_state(guild_id, 'current_stream_url')
     if not url:
       return None
 
@@ -154,8 +154,8 @@ class HealthMonitor(Monitor):
     except Exception as e:
       self.logger.debug(f"Could not check health of stream for guild {guild_id}: {repr(e)}")
 
-  def bot_health(self, guild_id: int, state: dict):
-    last_active_user_time = self.bot.get_state(guild_id, 'last_active_user_time')
+  def bot_health(self, guild_id: int):
+    last_active_user_time = self.state_manager.get_state(guild_id, 'last_active_user_time')
     if not last_active_user_time:
       return None
 
