@@ -51,8 +51,13 @@ shard_ids = [
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
+intents.guilds = True
+intents.voice_states = True
+# minimal member cache: only cache members related to events / interactions
+member_cache_flags = discord.MemberCacheFlags.from_intents(intents)
 
-bot = commands.AutoShardedBot(command_prefix='/', case_insensitive=True, intents=intents, shard_ids=shard_ids, shard_count=TOTAL_SHARDS)
+bot = commands.AutoShardedBot(command_prefix='/', case_insensitive=True, intents=intents, member_cache_flags=member_cache_flags , shard_ids=shard_ids, shard_count=TOTAL_SHARDS)
 bot.cluster_id = CLUSTER_ID
 bot.total_shards = TOTAL_SHARDS
 
