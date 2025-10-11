@@ -13,9 +13,12 @@ class StateManager:
   def __init__(self, bot: Client=None):
     self.bot = bot
     self.state = {}
+    self.maint = False
+    self.load_state()
 
-  state: dict[int, object]
   bot: Client
+  state: dict[int, object]
+  maint: bool
 
   def get_state(self, guild_id: int=None, var: str=None):
     # Make sure guild is setup for state
@@ -46,6 +49,11 @@ class StateManager:
   def clear_state(self, guild_id: int=None):
     # Just throw it all away, idk, maybe we'll need to close and disconnect stuff later
     self.state[guild_id] = {}
+
+  # Update maintenance status
+  def set_maint(self, status: bool):
+    self.maint = status
+    self.save_state()
 
   # Get all ids of guilds that have a valid voice clients or server state
   def all_active_guild_ids(self):

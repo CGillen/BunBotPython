@@ -201,7 +201,7 @@ async def song(interaction: discord.Interaction):
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 async def refresh(interaction: discord.Interaction):
-  if (STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url')):
+  if STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url'):
     await interaction.response.send_message("♻️ Refreshing stream, the bot may skip or leave and re-enter")
     await refresh_stream(interaction)
   else:
@@ -216,7 +216,7 @@ async def support(interaction: discord.Interaction):
   embed_data = {
     'title': "BunBot Support",
     'color': 0xF0E9DE,
-    'description': f"""
+    'description': """
       ❔ Got a question?
          Join us at https://discord.gg/ksZbX723Jn
          The team is always happy to help
@@ -252,7 +252,7 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
   page = min(page, page_count-1)
   page_index = page * per_page
 
-  if (await bot.is_owner(interaction.user)):
+  if await bot.is_owner(interaction.user):
     if id:
       resp.append(id)
       resp.append("Guild:")
@@ -291,44 +291,40 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
 
   await interaction.response.send_message("\n".join(resp), ephemeral=True)
 
-# @bot.tree.command(
-#     name='maint',
-#     description="Toggle maintenance mode! (Bot maintainer only)"
-# )
-# @discord.app_commands.checks.cooldown(rate=1, per=5)
-# @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
-# async def maint(interaction: discord.Interaction, status: bool = True):
-#     if (await bot.is_owner(interaction.user)):
-#       if (status):
-#         active_guild_ids = all_active_guild_ids()
-#         for guild_id in active_guild_ids:
-#           voice_channel = STATE_MANAGER.get_state(guild_id, 'text_channel')
-#           embed_data = {
-#             'title': "Maintenance",
-#             'color': 0xfce053,
-#             'description': f"The bot is entering maintenance mode. Commands and playback will be unavailable until maintenance is complete",
-#             'timestamp': str(datetime.datetime.now(datetime.UTC)),
-#           }
-#           embed = discord.Embed.from_dict(embed_data)
-#           await voice_channel.send(embed=embed)
-#           await stop_playback(bot.get_guild(guild_id))
-#       else:
-#         active_guild_ids = all_active_guild_ids()
-#         for guild_id in active_guild_ids:
-#           voice_channel = STATE_MANAGER.get_state(guild_id, 'text_channel')
-#           embed_data = {
-#             'title': "Maintenance",
-#             'color': 0xfce053,
-#             'description': f"Maintenance has concluded.",
-#             'timestamp': str(datetime.datetime.now(datetime.UTC)),
-#           }
-#           embed = discord.Embed.from_dict(embed_data)
-#           await voice_channel.send(embed=embed)
-#         pass
-#       await interaction.response.send_message(f"Now entering maintenance mode")
-#     else:
-#       logger.info("Pleb tried to put me in maintenance mode")
-#       await interaction.response.send_message(f"Awww look at you, how cute")
+@bot.tree.command(
+    name='maint',
+    description="Toggle maintenance mode! (Bot maintainer only)"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+@bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+async def maint(interaction: discord.Interaction, status: bool = True):
+    if await bot.is_owner(interaction.user):
+      STATE_MANAGER.set_maint(status)
+
+      active_guild_ids = STATE_MANAGER.all_active_guild_ids()
+      for guild_id in active_guild_ids:
+        voice_channel = STATE_MANAGER.get_state(guild_id, 'text_channel')
+        if status:
+            embed_data = {
+              'title': "Maintenance",
+              'color': 0xfce053,
+              'description': "The bot is entering maintenance mode. Commands and playback will be unavailable until maintenance is complete",
+              'timestamp': str(datetime.datetime.now(datetime.UTC)),
+            }
+            await stop_playback(bot.get_guild(guild_id))
+        else:
+          embed_data = {
+            'title': "Maintenance",
+            'color': 0xfce053,
+            'description': "Maintenance has concluded.",
+            'timestamp': str(datetime.datetime.now(datetime.UTC)),
+          }
+        embed = discord.Embed.from_dict(embed_data)
+        await voice_channel.send(embed=embed)
+        await interaction.response.send_message("Now entering maintenance mode")
+    else:
+      logger.info("Pleb tried to put me in maintenance mode")
+      await interaction.response.send_message("Awww look at you, how cute")
 
 ### FAVORITES COMMANDS ###
 
