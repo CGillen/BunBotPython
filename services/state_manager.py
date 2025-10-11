@@ -10,8 +10,11 @@ class StateManager:
   # cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
   # health_error_count = Int number of times a health error occurred in a row
   # ffmpeg_process_pid = PID for the FFMPEG process associated with the guild
+  def __init__(self, bot: Client=None):
+    self.bot = bot
+    self.state = {}
 
-  state: dict[int, object] = {}
+  state: dict[int, object]
   bot: Client
 
   def get_state(self, guild_id: int=None, var: str=None):
@@ -62,7 +65,7 @@ class StateManager:
     return active_ids
 
   # TODO: Create a way to dump and load state
-  def save_state():
+  def save_state(self):
     pass
-  def load_state():
+  def load_state(self):
     pass

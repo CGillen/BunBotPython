@@ -16,7 +16,7 @@ import urllib_hack
 from dotenv import load_dotenv
 from pathlib import Path
 from streamscrobbler import streamscrobbler
-from database import get_database
+from database.database import get_database
 from favorites_manager import get_favorites_manager
 from permissions import get_permission_manager, can_set_favorites_check, can_remove_favorites_check, can_manage_roles_check
 from stream_validator import get_stream_validator
@@ -89,7 +89,7 @@ logger.addHandler(file_handler)
 
 ### Setup various services ###
 # Create State Manager to manage the state
-STATE_MANAGER = StateManager()
+STATE_MANAGER = StateManager(bot=bot)
 # Create list of monitors
 MONITORS = [
   HealthMonitor(sys.modules[__name__], client=bot, state_manager=STATE_MANAGER, logger=logger),
@@ -929,7 +929,7 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
         logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
     return True
   except psutil.NoSuchProcess:
-    logger.debug(F"ffmpeg process {pid} exited early, ready to go!")
+    logger.debug(f"ffmpeg process {pid} exited early, ready to go!")
     return False
 
 
