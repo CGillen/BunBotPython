@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from database.models import Base, BotState
+from models.models import Base, BotState
 
 class StateManager:
   ### Available state variables ###

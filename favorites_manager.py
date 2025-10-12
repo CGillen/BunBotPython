@@ -5,6 +5,7 @@ Handles CRUD operations for radio station favorites with sequential numbering.
 
 import logging
 from typing import List, Dict, Any, Optional
+from database import get_database
 from stream_validator import get_stream_validator
 from input_validator import get_input_validator
 
@@ -14,6 +15,7 @@ class FavoritesManager:
     """Manages radio station favorites for Discord servers"""
 
     def __init__(self):
+        self.db = get_database()
         self.validator = get_stream_validator()
         self.input_validator = get_input_validator()
 
