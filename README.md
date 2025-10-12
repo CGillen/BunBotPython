@@ -24,6 +24,8 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/J3J61BNDZO)
 
 # So what's new?
+- `implemented robust state manager for robust recovery and speed!`
+- `implemented BunnyDB 🎉`
 - `more codecs! 🎉` 
 - `status and health monitoring system to combat desyncs!`
 - `implemented 3 try backoff system`
@@ -43,6 +45,6 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 - `Changed audio receiver library to Discord integrated`
 - `Migrated to Python!`
 - `Hac-I mean added ICY support into urllib.py`
-- `13 Bugs Squashed! 🎉`
+- `16 Bugs Squashed! 🎉`
   
 <sub>SHOUTcast is a registered trademark of NULLsoft, Bunbot! is in no way affiliated with Nullsoft and their respective copyright holders.</sub>
