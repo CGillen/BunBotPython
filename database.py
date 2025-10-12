@@ -16,22 +16,22 @@ logger = logging.getLogger('discord')
 
 class DatabaseInterface(ABC):
     """Abstract database interface for future cloud migration"""
-    
+
     @abstractmethod
     def execute_query(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
         """Execute a SELECT query and return results as list of dictionaries"""
         pass
-    
+
     @abstractmethod
     def execute_non_query(self, query: str, params: tuple = ()) -> int:
         """Execute INSERT/UPDATE/DELETE query and return affected rows"""
         pass
-    
+
     @abstractmethod
     def transaction(self) -> ContextManager:
         """Get a transaction context manager"""
         pass
-    
+
     @abstractmethod
     def close(self):
         """Close database connection"""
@@ -39,12 +39,12 @@ class DatabaseInterface(ABC):
 
 class SQLiteDatabase(DatabaseInterface):
     """SQLite implementation of database interface with thread safety and transaction support"""
-    
+
     def __init__(self, db_path: str = "bunbot.db"):
         self.db_path = db_path
         self.local = threading.local()  # Thread-local storage for connections
         self.init_database()
-    
+
     def get_connection(self):
         """Get thread-local database connection, create if needed"""
         if not hasattr(self.local, 'connection') or self.local.connection is None:
@@ -57,7 +57,7 @@ class SQLiteDatabase(DatabaseInterface):
             # Enable foreign key constraints
             self.local.connection.execute("PRAGMA foreign_keys = ON")
         return self.local.connection
-    
+
     @contextmanager
     def transaction(self):
         """Context manager for database transactions"""
@@ -68,14 +68,14 @@ class SQLiteDatabase(DatabaseInterface):
         except Exception:
             conn.rollback()
             raise
-    
+
     def init_database(self):
         """Initialize database tables"""
         logger.info(f"Initializing SQLite database at {self.db_path}")
-        
+
         conn = self.get_connection()
         cursor = conn.cursor()
-        
+
         try:
             # Create favorites table
             cursor.execute("""
@@ -90,7 +90,7 @@ class SQLiteDatabase(DatabaseInterface):
                     UNIQUE(guild_id, favorite_number)
                 )
             """)
-            
+
             # Create role hierarchy table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS role_hierarchy (
@@ -102,7 +102,7 @@ class SQLiteDatabase(DatabaseInterface):
                     can_manage_roles BOOLEAN DEFAULT FALSE
                 )
             """)
-            
+
             # Create server roles mapping table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS server_roles (
@@ -113,7 +113,7 @@ class SQLiteDatabase(DatabaseInterface):
                     FOREIGN KEY (role_name) REFERENCES role_hierarchy(role_name)
                 )
             """)
-            
+
             # Insert default role hierarchy if not exists
             cursor.execute("SELECT COUNT(*) FROM role_hierarchy")
             if cursor.fetchone()[0] == 0:
@@ -123,28 +123,28 @@ class SQLiteDatabase(DatabaseInterface):
                     ('radio manager', 3, True, True, False),
                     ('admin', 4, True, True, True)
                 ]
-                
+
                 cursor.executemany("""
-                    INSERT INTO role_hierarchy 
+                    INSERT INTO role_hierarchy
                     (role_name, permission_level, can_set_favorites, can_remove_favorites, can_manage_roles)
                     VALUES (?, ?, ?, ?, ?)
                 """, default_roles)
-                
+
                 logger.info("Inserted default role hierarchy")
-            
+
             conn.commit()
             logger.info("Database initialization completed successfully")
-            
+
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
             conn.rollback()
             raise
-    
+
     def execute_query(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
         """Execute a SELECT query and return results as list of dictionaries"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute(query, params)
             rows = cursor.fetchall()
@@ -153,12 +153,12 @@ class SQLiteDatabase(DatabaseInterface):
         except Exception as e:
             logger.error(f"Query execution failed: {query} with params {params}. Error: {e}")
             raise
-    
+
     def execute_non_query(self, query: str, params: tuple = ()) -> int:
         """Execute INSERT/UPDATE/DELETE query and return affected rows"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        
+
         try:
             cursor.execute(query, params)
             conn.commit()
@@ -167,7 +167,7 @@ class SQLiteDatabase(DatabaseInterface):
             logger.error(f"Non-query execution failed: {query} with params {params}. Error: {e}")
             conn.rollback()
             raise
-    
+
     def close(self):
         """Close thread-local database connection"""
         if hasattr(self.local, 'connection') and self.local.connection:

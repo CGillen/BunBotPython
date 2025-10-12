@@ -1,18 +1,8 @@
-from dataclasses import dataclass
 from enum import Enum
 from abc import ABC, abstractmethod
 from logging import Logger
-
 from discord import Client
 
-
-class HealthStates(Enum):
-    """Health status levels for components and systems"""
-    HEALTHY = 'healthy'
-    WARNING = 'warning'
-    CRITICAL = 'critical'
-    OFFLINE = 'offline'
-    UNKNOWN = 'unknown'
 
 class ErrorStates(Enum):
    CLIENT_NOT_IN_CHAT = 'client_not_in_chat'
@@ -24,7 +14,9 @@ class ErrorStates(Enum):
    INACTIVE_CHANNEL = 'inactive_channel'
 
 class Monitor(ABC):
-  def __init__(self, bot, client: Client, state_manager=None, logger: Logger=None, stationinfo=None):
+  from services.state_manager import StateManager
+
+  def __init__(self, bot, client: Client, state_manager: StateManager=None, logger: Logger=None, stationinfo=None):
     self.bot = bot
     self.client = client
     self.state_manager = state_manager
@@ -33,7 +25,3 @@ class Monitor(ABC):
   @abstractmethod
   async def execute(self, guild_id: int, state: dict[int, dict[str, str]]):
     pass
-
-@dataclass
-class State:
-  pass

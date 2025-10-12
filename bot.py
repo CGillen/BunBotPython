@@ -16,7 +16,6 @@ import urllib_hack
 from dotenv import load_dotenv
 from pathlib import Path
 from streamscrobbler import streamscrobbler
-from database import get_database
 from favorites_manager import get_favorites_manager
 from permissions import get_permission_manager, can_set_favorites_check, can_remove_favorites_check, can_manage_roles_check
 from stream_validator import get_stream_validator
@@ -51,22 +50,16 @@ shard_ids = [
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
+intents.guilds = True
+intents.voice_states = True
+# minimal member cache: only cache members related to events / interactions
+member_cache_flags = discord.MemberCacheFlags.from_intents(intents)
 
-bot = commands.AutoShardedBot(command_prefix='/', case_insensitive=True, intents=intents, shard_ids=shard_ids, shard_count=TOTAL_SHARDS)
+bot = commands.AutoShardedBot(command_prefix='/', case_insensitive=True, intents=intents, member_cache_flags=member_cache_flags , shard_ids=shard_ids, shard_count=TOTAL_SHARDS)
 bot.cluster_id = CLUSTER_ID
 bot.total_shards = TOTAL_SHARDS
 
-server_state: StateManager
-server_state = {}
-### Available state variables ###
-# current_stream_url = URL to playing (or about to be played) shoutcast stream
-# metadata_listener = Asyncio task for listening to metadata (monitor_metadata())
-# text_channel = Text channel original play command came from
-# start_time = Time the current stream started playing
-# last_active_user_time = Time the last active user was spotted in the voice channel
-# cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
-# health_error_count = Int number of times a health error occurred in a row
-# ffmpeg_process_pid = PID for the FFMPEG process associated with the guild
 
 # Set up logging
 logger = logging.getLogger('discord')
@@ -93,12 +86,22 @@ file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
-# Create list of monitors
-MONITORS = [
-  HealthMonitor(sys.modules[__name__], client=bot, logger=logger),
-  MetadataMonitor(sys.modules[__name__], client=bot, logger=logger)
-]
+# TODO: Clean this up?
+STATE_MANAGER = None
+MONITORS = []
 
+async def init():
+  ### Setup various services ###
+  # Create State Manager to manage the state
+  global STATE_MANAGER
+  STATE_MANAGER = await StateManager.create_state_manager(bot=bot)
+  # Create list of monitors
+  global MONITORS
+  MONITORS = [
+    HealthMonitor(sys.modules[__name__], client=bot, state_manager=STATE_MANAGER, logger=logger),
+    MetadataMonitor(sys.modules[__name__], client=bot, state_manager=STATE_MANAGER, logger=logger)
+  ]
+asyncio.run(init())
 
 
 @bot.event
@@ -130,12 +133,20 @@ def bot_has_channel_permissions(permissions: discord.Permissions):
         raise discord.app_commands.BotMissingPermissions(missing_permissions=missing_permissions)
     return discord.app_commands.checks.check(predicate)
 
+def bot_not_in_maintenance():
+  async def predicate(interaction: discord.Interaction):
+    if STATE_MANAGER.get_maint() and not await bot.is_owner(interaction.user):
+      return False
+    return True
+  return discord.app_commands.checks.check(predicate)
+
 @bot.tree.command(
     name='play',
     description="Begin playback of a shoutcast/icecast stream"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+@bot_not_in_maintenance()
 async def play(interaction: discord.Interaction, url: str):
   if not is_valid_url(url):
     raise commands.BadArgument("🙇 I'm sorry, I don't know what that means!")
@@ -150,9 +161,10 @@ async def play(interaction: discord.Interaction, url: str):
     description="Remove the bot from the current call"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@bot_not_in_maintenance()
 async def leave(interaction: discord.Interaction, force: bool = False):
   voice_client = interaction.guild.voice_client
-  has_state = bool(get_state(interaction.guild.id, 'current_stream_url'))
+  has_state = bool(STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url'))
 
   # Handle normal case - voice client exists
   if voice_client:
@@ -168,7 +180,7 @@ async def leave(interaction: discord.Interaction, force: bool = False):
       await interaction.response.send_message("🔄 Detected state desync - automatically recovering...")
 
     # Automatically clear stale state
-    clear_state(interaction.guild.id)
+    STATE_MANAGER.clear_state(interaction.guild.id)
     logger.info(f"[{interaction.guild.id}]: Auto-recovered from state desync via /leave")
 
     if force:
@@ -186,10 +198,10 @@ async def leave(interaction: discord.Interaction, force: bool = False):
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 async def song(interaction: discord.Interaction):
-  url = get_state(interaction.guild.id, 'current_stream_url')
-  if (url):
+  url = STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url')
+  if url:
     await interaction.response.send_message("Fetching song title...")
-    stationinfo = get_station_info(url)
+    stationinfo = await get_station_info(url)
     if stationinfo['metadata']:
       await interaction.edit_original_response(content=f"Now Playing: 🎶 {stationinfo['metadata']['song']} 🎶")
     else:
@@ -203,8 +215,9 @@ async def song(interaction: discord.Interaction):
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+@bot_not_in_maintenance()
 async def refresh(interaction: discord.Interaction):
-  if (get_state(interaction.guild.id, 'current_stream_url')):
+  if STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url'):
     await interaction.response.send_message("♻️ Refreshing stream, the bot may skip or leave and re-enter")
     await refresh_stream(interaction)
   else:
@@ -219,7 +232,7 @@ async def support(interaction: discord.Interaction):
   embed_data = {
     'title': "BunBot Support",
     'color': 0xF0E9DE,
-    'description': f"""
+    'description': """
       ❔ Got a question?
          Join us at https://discord.gg/ksZbX723Jn
          The team is always happy to help
@@ -255,16 +268,16 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
   page = min(page, page_count-1)
   page_index = page * per_page
 
-  if (await bot.is_owner(interaction.user)):
+  if await bot.is_owner(interaction.user):
     if id:
       resp.append(id)
       resp.append("Guild:")
       guild = next((x for x in bot.guilds if str(x.id) == id), None)
       if guild:
-        start_time = get_state(guild.id, 'start_time')
+        start_time = STATE_MANAGER.get_state(guild.id, 'start_time')
 
         resp.append(f"- {guild.name} ({guild.id}): user count - {guild.member_count}")
-        resp.append(f"\tState: {get_state(guild.id)}")
+        resp.append(f"\tState: {STATE_MANAGER.get_state(guild.id)}")
         if start_time:
           resp.append(f"\tRun time: {datetime.datetime.now(datetime.UTC) - start_time}")
         resp.append(f"\tShard: {guild.shard_id}")
@@ -272,10 +285,10 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
     else:
       resp.append("Guilds:")
       for guild in bot.guilds[page_index:page_index+per_page]:
-        start_time = get_state(guild.id, 'start_time')
+        start_time = STATE_MANAGER.get_state(guild.id, 'start_time')
 
         resp.append(f"- {guild.name} ({guild.id}): user count - {guild.member_count}")
-        resp.append(f"\tStatus: {get_state(guild.id, 'current_stream_url') or "Not Playing"}")
+        resp.append(f"\tStatus: {STATE_MANAGER.get_state(guild.id, 'current_stream_url') or "Not Playing"}")
       resp.append(f"Total pages: {page_count}")
       resp.append(f"Current page: {math.floor(page_count/per_page) + 1}")
     resp.append("Bot:")
@@ -284,54 +297,59 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
   else:
     resp.append(f"\tGuild count: {len(bot.guilds)}")
 
-  start_time = get_state(interaction.guild.id, 'start_time')
+  start_time = STATE_MANAGER.get_state(interaction.guild.id, 'start_time')
 
   resp.append("==\tServer Info\t==")
-  resp.append(f"\tStream URL: {get_state(interaction.guild.id, 'current_stream_url') or "Not Playing"}")
-  resp.append(f"\tCurrent song: {get_state(interaction.guild.id, 'current_song') or "Not Playing"}")
+  resp.append(f"\tStream URL: {STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url') or "Not Playing"}")
+  resp.append(f"\tCurrent song: {STATE_MANAGER.get_state(interaction.guild.id, 'current_song') or "Not Playing"}")
   if start_time:
     resp.append(f"\tRun time: {datetime.datetime.now(datetime.UTC) - start_time}")
 
   await interaction.response.send_message("\n".join(resp), ephemeral=True)
 
-# @bot.tree.command(
-#     name='maint',
-#     description="Toggle maintenance mode! (Bot maintainer only)"
-# )
-# @discord.app_commands.checks.cooldown(rate=1, per=5)
-# @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
-# async def maint(interaction: discord.Interaction, status: bool = True):
-#     if (await bot.is_owner(interaction.user)):
-#       if (status):
-#         active_guild_ids = all_active_guild_ids()
-#         for guild_id in active_guild_ids:
-#           voice_channel = get_state(guild_id, 'text_channel')
-#           embed_data = {
-#             'title': "Maintenance",
-#             'color': 0xfce053,
-#             'description': f"The bot is entering maintenance mode. Commands and playback will be unavailable until maintenance is complete",
-#             'timestamp': str(datetime.datetime.now(datetime.UTC)),
-#           }
-#           embed = discord.Embed.from_dict(embed_data)
-#           await voice_channel.send(embed=embed)
-#           await stop_playback(bot.get_guild(guild_id))
-#       else:
-#         active_guild_ids = all_active_guild_ids()
-#         for guild_id in active_guild_ids:
-#           voice_channel = get_state(guild_id, 'text_channel')
-#           embed_data = {
-#             'title': "Maintenance",
-#             'color': 0xfce053,
-#             'description': f"Maintenance has concluded.",
-#             'timestamp': str(datetime.datetime.now(datetime.UTC)),
-#           }
-#           embed = discord.Embed.from_dict(embed_data)
-#           await voice_channel.send(embed=embed)
-#         pass
-#       await interaction.response.send_message(f"Now entering maintenance mode")
-#     else:
-#       logger.info("Pleb tried to put me in maintenance mode")
-#       await interaction.response.send_message(f"Awww look at you, how cute")
+@bot.tree.command(
+    name='maint',
+    description="Toggle maintenance mode! (Bot maintainer only)"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+@bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
+async def maint(interaction: discord.Interaction, status: bool = True):
+    if await bot.is_owner(interaction.user):
+      if status == STATE_MANAGER.get_maint():
+        await interaction.response.send_message("❌ Given maintenance status matches bot maintenance status. Nothing interesting happens.")
+        return
+
+      await interaction.response.send_message("🛠️ Toggling maintenance mode... please wait")
+      await STATE_MANAGER.set_maint(status=status)
+
+      active_guild_ids = STATE_MANAGER.all_active_guild_ids()
+      for guild_id in active_guild_ids:
+        text_channel = STATE_MANAGER.get_state(guild_id, 'text_channel')
+        if status:
+            embed_data = {
+              'title': "Maintenance",
+              'color': 0xfce053,
+              'description': "The bot is entering maintenance mode. Commands and playback will be unavailable until maintenance is complete",
+              'timestamp': str(datetime.datetime.now(datetime.UTC)),
+            }
+            await stop_playback(bot.get_guild(guild_id))
+        else:
+          embed_data = {
+            'title': "Maintenance",
+            'color': 0xfce053,
+            'description': "Maintenance has concluded.",
+            'timestamp': str(datetime.datetime.now(datetime.UTC)),
+          }
+        embed = discord.Embed.from_dict(embed_data)
+        await text_channel.send(embed=embed)
+      if status:
+        await interaction.edit_original_response(content="👷 Maintenance mode enabled")
+      else:
+        await interaction.edit_original_response(content="👷 Maintenance mode disabled")
+
+    else:
+      logger.info("😂 Pleb tried to put me in maintenance mode")
+      await interaction.response.send_message("Awww look at you, how cute")
 
 ### FAVORITES COMMANDS ###
 
@@ -359,7 +377,7 @@ async def set_favorite(interaction: discord.Interaction, url: str, name: str = N
 
   try:
     favorites_manager = get_favorites_manager()
-    result = favorites_manager.add_favorite(
+    result = await favorites_manager.add_favorite(
       guild_id=interaction.guild.id,
       url=url,
       name=name,
@@ -630,9 +648,9 @@ def is_valid_url(url):
 
 # Find information about the playing station & send that as an embed to the original text channel
 async def send_song_info(guild_id: int):
-  url = get_state(guild_id, 'current_stream_url')
-  channel = get_state(guild_id, 'text_channel')
-  stationinfo = get_station_info(url)
+  url = STATE_MANAGER.get_state(guild_id, 'current_stream_url')
+  channel = STATE_MANAGER.get_state(guild_id, 'text_channel')
+  stationinfo = await get_station_info(url)
 
   if not stationinfo['metadata']:
     logger.warning("We didn't get metadata back from the station, can't send the station info")
@@ -655,12 +673,12 @@ async def send_song_info(guild_id: int):
   return await channel.send(embed=embed)
 
 # Retrieve information about the shoutcast stream
-def get_station_info(url: str):
+async def get_station_info(url: str):
   if not url:
     logger.warning("Stream URL not set, can't send song information to channel")
     raise shout_errors.NoStreamSelected()
 
-  stationinfo = streamscrobbler.get_server_info(url)
+  stationinfo = await streamscrobbler.get_server_info(url)
   if stationinfo['status'] <= 0:
     logger.warning("Stream not up, unable to update song title")
     raise shout_errors.StreamOffline()
@@ -674,7 +692,7 @@ async def handle_stream_disconnect(guild: discord.Guild):
     logger.info(f"[{guild.id}]: checking for stream disconnected")
 
     # Get current state before clearing
-    channel = get_state(guild.id, 'text_channel')
+    channel = STATE_MANAGER.get_state(guild.id, 'text_channel')
 
     # Notify users if possible
     if channel:
@@ -702,17 +720,17 @@ async def handle_stream_disconnect(guild: discord.Guild):
       logger.debug(f"[{guild.id}]: Error attempting to purge ffmpeg in Handle_stream_disconnect: {e}")
 
     # Clear all state for this guild
-    clear_state(guild.id)
+    STATE_MANAGER.clear_state(guild.id)
     logger.info(f"[{guild.id}]: stream cleaned successfully!")
 
   except Exception as e:
     logger.error(f"[{guild.id}]: Error in handle_stream_disconnect: {e}")
     # Ensure state is cleared even if other operations fail
-    clear_state(guild.id)
+    STATE_MANAGER.clear_state(guild.id)
 
 # Resync the stream by leaving and coming back
 async def refresh_stream(interaction: discord.Interaction):
-  url = get_state(interaction.guild.id, 'current_stream_url')
+  url = STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url')
 
   await stop_playback(interaction.guild)
   await play_stream(interaction, url)
@@ -741,7 +759,7 @@ async def play_stream(interaction, url):
     try:
       logger.info("Attempting to purge stale client")
       await interaction.edit_original_response(content="this is taking a while... don't worry we're still trying to get your stream!")
-      set_state(interaction.guild.id, 'cleaning_up', True)
+      STATE_MANAGER.set_state(interaction.guild.id, 'cleaning_up', True)
       await voice_client.disconnect(force=True)
       logger.info("Disconnected stale voice client before starting new stream")
     except Exception as e: # Last ditch effort
@@ -754,7 +772,7 @@ async def play_stream(interaction, url):
 
   logger.info(f"Starting channel {url}")
 
-  stationinfo = streamscrobbler.get_server_info(url)
+  stationinfo = await streamscrobbler.get_server_info(url)
   ## metadata is the bitrate and current song
   metadata = stationinfo['metadata']
   ## status is the integer to tell if the server is up or down, 0 is down, 1 is up, 2 is up with metadata
@@ -808,7 +826,7 @@ async def play_stream(interaction, url):
       if pid is None and hasattr(proc, 'pid'):
         pid = proc.pid ## hmm... we still don't have it, try this way instead
     if pid:
-      set_state(interaction.guild.id, 'ffmpeg_process_pid', pid) ## we got it, lets keep it safe
+      STATE_MANAGER.set_state(interaction.guild.id, 'ffmpeg_process_pid', pid) ## we got it, lets keep it safe
       logger.debug(f"[{interaction.guild.id}]: Recorded ffmpeg PID: {pid}")
   except Exception as e:
     logger.warning(f"[{interaction.guild.id}]: Could not record ffmpeg process PID: {e}")  ## darn, we tried!
@@ -832,19 +850,19 @@ async def play_stream(interaction, url):
     return
 
   # Everything was successful, lets keep all the data
-  set_state(interaction.guild.id, 'current_stream_url', url)
-  set_state(interaction.guild.id, 'text_channel', interaction.channel)
-  set_state(interaction.guild.id, 'start_time', datetime.datetime.now(datetime.UTC))
+  STATE_MANAGER.set_state(interaction.guild.id, 'current_stream_url', url)
+  STATE_MANAGER.set_state(interaction.guild.id, 'text_channel', interaction.channel)
+  STATE_MANAGER.set_state(interaction.guild.id, 'start_time', datetime.datetime.now(datetime.UTC))
 
   # And let the user know what song is playing
   await send_song_info(interaction.guild.id)
-  set_state(interaction.guild.id, 'cleaning_up', False)
+  STATE_MANAGER.set_state(interaction.guild.id, 'cleaning_up', False)
 
 
 # Disconnect the bot, close the stream, BAN FFmpeg, and reset state
 async def stop_playback(guild: discord.Guild):
   # Let the bot know we're cleaning up and it needs to wait before any more commands are processed
-  set_state(guild.id, 'cleaning_up', True)
+  STATE_MANAGER.set_state(guild.id, 'cleaning_up', True)
   # handle case where client says connected when it shouldn't be
   voice_client = guild.voice_client
   if voice_client:
@@ -871,84 +889,36 @@ async def stop_playback(guild: discord.Guild):
         pass
 
   # Ensure any lingering ffmpeg process is terminated before clearing state
-  logger.debug(f"Starting guild state Clean: {get_state(guild.id)}")
+  logger.debug(f"Starting guild state Clean: {STATE_MANAGER.get_state(guild.id)}")
   try:
     logger.debug(f"[{guild.id}]: Purging ffmpeg first")
     kill_ffmpeg_process(guild.id)
   except Exception as e:
     logger.debug(f"[{guild.id}]: Error attempting to purge ffmpeg during Stop_playback: {e}")
 
-  clear_state(guild.id)
-  logger.debug(f"Guild state cleared: {get_state(guild.id)}")
-  set_state(guild.id, 'cleaning_up', False)
+  STATE_MANAGER.clear_state(guild.id)
+  logger.debug(f"Guild state cleared: {STATE_MANAGER.get_state(guild.id)}")
+  STATE_MANAGER.set_state(guild.id, 'cleaning_up', False)
 
 
 @tasks.loop(seconds = 15)
 async def heartbeat():
   try:
     logger.debug(f"Running heartbeat for all guilds")
-    active_guild_ids = all_active_guild_ids()
+    active_guild_ids = STATE_MANAGER.all_active_guild_ids()
     for guild_id in active_guild_ids:
-      url = get_state(guild_id, 'current_stream_url')
+      url = STATE_MANAGER.get_state(guild_id, 'current_stream_url')
 
       if url is None:
         continue
 
       # Loop through monitors and execute. Let them handle their own shit
-      stationinfo = streamscrobbler.get_server_info(url)
+      stationinfo = await streamscrobbler.get_server_info(url)
       for monitor in MONITORS:
-        await monitor.execute(guild_id=guild_id, state=get_state(guild_id), stationinfo=stationinfo)
+        await monitor.execute(guild_id=guild_id, state=STATE_MANAGER.get_state(guild_id), stationinfo=stationinfo)
   except Exception as e:
     logger.error(f"An unhandled error occurred in the heartbeat: {e}")
 
-
-# Get all ids of guilds that have a valid voice clients or server state
-def all_active_guild_ids():
-  active_ids = []
-  for guild_id in server_state.keys():
-    # Only consider active if state exists and voice client is connected
-    guild = bot.get_guild(guild_id)
-
-    # Sometimes we need to exclude some state variables when considering if the guild is active
-    vars_to_exclude = ['cleaning_up']
-    temp_state = {key: value for key, value in get_state(guild_id).items() if key not in vars_to_exclude}
-
-    state_active = bool(temp_state)
-    vc_active = guild and guild.voice_client and guild.voice_client.is_connected()
-    if state_active or vc_active:
-      active_ids.append(guild_id)
-  return active_ids
-
-# Getter for state of a guild
-def get_state(guild_id, var=None):
-  # Make sure guild is setup for state
-  if guild_id not in server_state:
-    server_state[guild_id] = {}
-  # Return whole state object if no var name was passed
-  if var is None:
-    return server_state[guild_id]
-  # Make sure var is available in guild state
-  if var not in server_state[guild_id]:
-    return None
-
-  return server_state[guild_id][var]
-
-# Setter for state of a guild
-def set_state(guild_id, var, val):
-  # Make sure guild is setup for state
-  if guild_id not in server_state:
-    server_state[guild_id] = {}
-  # Make sure var is available in guild state
-  if var not in server_state[guild_id]:
-    server_state[guild_id][var] = None
-
-  server_state[guild_id][var] = val
-  return val
-
-# Clear out state so we can start all over
-def clear_state(guild_id):
-  # Just throw it all away, idk, maybe we'll need to close and disconnect stuff later
-  server_state[guild_id] = {}
 
 # TODO: maybe add these checks to health monitor
 def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
@@ -958,7 +928,7 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
   """
   pid = None ## specify default as none, probably not necessary
   try:
-    pid = get_state(guild_id, 'ffmpeg_process_pid') ## lets try to get the pid from state
+    pid = STATE_MANAGER.get_state(guild_id, 'ffmpeg_process_pid') ## lets try to get the pid from state
   except Exception:
     pid = None ## we couldn't get it, set it to none
 
@@ -980,12 +950,12 @@ def kill_ffmpeg_process(guild_id: int, timeout: float = 3.0):
         logger.warning(f"[{guild_id}]: ffmpeg process {pid} terminated ungracefully due to timeout")
     return True
   except psutil.NoSuchProcess:
-    logger.debug(F"ffmpeg process {pid} exited early, ready to go!")
+    logger.debug(f"ffmpeg process {pid} exited early, ready to go!")
     return False
 
 
 # Utility method to check if the bot is cleaning up
 async def is_cleaning_up(interaction: discord.Interaction):
-  return get_state(interaction.guild.id, 'cleaning_up')
+  return STATE_MANAGER.get_state(interaction.guild.id, 'cleaning_up')
 
 bot.run(BOT_TOKEN, log_handler=None)
