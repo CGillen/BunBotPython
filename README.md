@@ -24,6 +24,7 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/J3J61BNDZO)
 
 # So what's new?
+- `Maint Embed added to let the audience know when it's time for service! 🎉`
 - `More-Better-extra Handling for ~SLOOOOOWERRRR~ servers`
 - `Implemented robust state manager for speedy recovery! 🎉`
 - `Implemented BunnyDB 🎉`
