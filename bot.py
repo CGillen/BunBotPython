@@ -16,7 +16,6 @@ import urllib_hack
 from dotenv import load_dotenv
 from pathlib import Path
 from streamscrobbler import streamscrobbler
-from database.database import get_database
 from favorites_manager import get_favorites_manager
 from permissions import get_permission_manager, can_set_favorites_check, can_remove_favorites_check, can_manage_roles_check
 from stream_validator import get_stream_validator

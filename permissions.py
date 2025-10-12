@@ -6,7 +6,6 @@ Handles role-based permissions with hierarchical levels.
 import logging
 from typing import List, Dict, Any, Optional
 import discord
-from database.database import get_database
 
 logger = logging.getLogger('discord')
 
@@ -14,7 +13,6 @@ class PermissionManager:
     """Manages role-based permissions for favorites system"""
 
     def __init__(self):
-        self.db = get_database()
 
     def get_user_permission_level(self, guild_id: int, user: discord.Member) -> int:
         """
