@@ -6,11 +6,16 @@ Bunbot currently supports the following Codecs:
 
 
 It's designed to play Shoutcast and some Icecast streams. It supports the following commands:
-- `/play`: Start playing the stream.
-- `/leave`: Leave the voice channel.
-- `/refresh`: Refresh the stream list.
-- `/song`: Display the current song playing.
-- `/support`: Learn where you can get help with the bot or how to help.
+- `/play`: Starts playing the stream.
+- `/leave`: Leaves the voice channel.
+- `/refresh`: Refresh the current playing stream.
+- `/song`: Displays the current song playing.
+- `/support`: Learn where you can Support!
+###### Maintainer Only Commands:
+- `/debug`: Displays Limited Debugging information; can be used by normal members, but displays significantly less!
+- `/maint`: used to toggle maint mode on and off, used for maintaining the bot!
+
+<sub>Any command relating to the favorites system is in progress and highly unstable!</sub>
 
 # Requirements
 - `ffmpeg` - [Download](https://ffmpeg.org/download.html)
