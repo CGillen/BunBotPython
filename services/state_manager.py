@@ -100,3 +100,4 @@ class StateManager:
       result = await session.execute(stmt)
       await session.commit()
     self.bot_state = result.scalars().first()
+    self.bot_state = self.bot_state or BotState(id=1,maint=0)
