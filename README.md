@@ -25,7 +25,7 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 
 # So what's new?
 - `More-Better-extra Handling for ~SLOOOOOWERRRR~ servers`
-- `Implemented robust state manager for robust recovery and speed! 🎉`
+- `Implemented robust state manager for speedy recovery! 🎉`
 - `Implemented BunnyDB 🎉`
 - `More codecs! 🎉` 
 - `Status and health monitoring system to combat desyncs!`
