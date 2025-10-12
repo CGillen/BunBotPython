@@ -10,7 +10,7 @@ It's designed to play Shoutcast and some Icecast streams. It supports the follow
 - `/leave`: Leaves the voice channel.
 - `/refresh`: Refresh the current playing stream.
 - `/song`: Displays the current song playing.
-- `/support`: Learn where you can Support!
+- `/support`: Learn where you can get Support!
 ###### Maintainer Only Commands:
 - `/debug`: Displays Limited Debugging information; can be used by normal members, but displays significantly less!
 - `/maint`: used to toggle maint mode on and off, used for maintaining the bot!
