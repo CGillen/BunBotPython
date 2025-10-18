@@ -24,7 +24,7 @@ class StreamValidator:
             logger.info(f"Validating stream: {url}")
 
             # Use existing streamscrobbler validation
-            stationinfo = await streamscrobbler.get_server_info(url)
+            stationinfo = streamscrobbler.get_server_info(url)
 
             if stationinfo['status'] <= 0:
                 logger.warning(f"Stream validation failed - status: {stationinfo['status']}")
