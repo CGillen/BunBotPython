@@ -40,4 +40,3 @@ class MetadataMonitor(Monitor):
       else:
         self.logger.warning(f"[{guild_id}|Metadata Monitor]: Do not have permission to send messages in {channel}")
       await self.bot.stop_playback(guild)
-    pass
