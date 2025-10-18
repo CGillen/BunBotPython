@@ -49,7 +49,6 @@ shard_ids = [
 # END CLUSTERING
 
 intents = discord.Intents.default()
-intents.message_content = True
 intents.members = True
 intents.guilds = True
 intents.voice_states = True
@@ -86,6 +85,8 @@ file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
+_active_heartbeats = {}
+
 # TODO: Clean this up?
 STATE_MANAGER = None
 MONITORS = []
@@ -111,7 +112,6 @@ async def on_ready():
 
   logger.info("Syncing slash commands")
   await bot.tree.sync()
-  heartbeat.start()
   logger.info(f"Logged on as {bot.user}")
   logger.info(f"Shard IDS: {bot.shard_ids}")
   logger.info(f"Cluster ID: {bot.cluster_id}")
@@ -678,7 +678,7 @@ async def get_station_info(url: str):
     logger.warning("Stream URL not set, can't send song information to channel")
     raise shout_errors.NoStreamSelected()
 
-  stationinfo = await streamscrobbler.get_server_info(url)
+  stationinfo = streamscrobbler.get_server_info(url)
   if stationinfo['status'] <= 0:
     logger.warning("Stream not up, unable to update song title")
     raise shout_errors.StreamOffline()
@@ -689,6 +689,7 @@ async def get_station_info(url: str):
 async def handle_stream_disconnect(guild: discord.Guild):
   """Handle stream disconnection and clean up state properly"""
   try:
+    _active_heartbeats[guild.id].cancel()
     logger.info(f"[{guild.id}]: checking for stream disconnected")
 
     # Get current state before clearing
@@ -772,7 +773,7 @@ async def play_stream(interaction, url):
 
   logger.info(f"Starting channel {url}")
 
-  stationinfo = await streamscrobbler.get_server_info(url)
+  stationinfo = streamscrobbler.get_server_info(url)
   ## metadata is the bitrate and current song
   metadata = stationinfo['metadata']
   ## status is the integer to tell if the server is up or down, 0 is down, 1 is up, 2 is up with metadata
@@ -790,7 +791,7 @@ async def play_stream(interaction, url):
   except Exception as error: # if there is an error, let the user know.
     logger.error(f"Failed to connect to stream: {error}")
     await interaction.edit_original_response(content="Error fetching stream. Maybe the stream is down?")
-    return
+    return False
 
   # Try to connect to voice chat, and only consider connected if both conditions met
   if not voice_client or not voice_client.is_connected():
@@ -800,7 +801,7 @@ async def play_stream(interaction, url):
     except Exception as e:
       logger.error(f"Failed to connect to voice channel: {e}")
       await interaction.edit_original_response(content="Failed to connect to voice channel. Please try again.")
-      return
+      return False
 
   # Pipe music stream to FFMpeg:
 
@@ -809,7 +810,7 @@ async def play_stream(interaction, url):
   # 4080 bytes per tick * 8 chunks = 32640 + 8 marker bytes = 32648 bits buffer (8 chunks)
   # 4080 bytes per tick * 4 Chunks = 16320 + 4 marker bytes = 16324 bits per analysis (4 chunks)
 
-  music_stream = discord.FFmpegPCMAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 60 -tls_verify 0")
+  music_stream = discord.FFmpegOpusAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 60 -tls_verify 0")
   await asyncio.sleep(1)  # Give FFmpeg a moment to start
 
   # Try to detect and record the ffmpeg subprocess PID so we can clean it up later
@@ -847,7 +848,7 @@ async def play_stream(interaction, url):
   except discord.ClientException as e:
     logger.error(f"Voice client play failed: {e}")
     await interaction.edit_original_response(content="Failed to start playback. Voice client not connected.")
-    return
+    return False
 
   # Everything was successful, lets keep all the data
   STATE_MANAGER.set_state(interaction.guild.id, 'current_stream_url', url)
@@ -857,6 +858,9 @@ async def play_stream(interaction, url):
   # And let the user know what song is playing
   await send_song_info(interaction.guild.id)
   STATE_MANAGER.set_state(interaction.guild.id, 'cleaning_up', False)
+  create_and_start_heartbeat(interaction.guild_id)
+
+  return True
 
 
 # Disconnect the bot, close the stream, BAN FFmpeg, and reset state
@@ -900,24 +904,28 @@ async def stop_playback(guild: discord.Guild):
   logger.debug(f"Guild state cleared: {STATE_MANAGER.get_state(guild.id)}")
   STATE_MANAGER.set_state(guild.id, 'cleaning_up', False)
 
+  _active_heartbeats[guild.id].cancel()
 
-@tasks.loop(seconds = 15)
-async def heartbeat():
-  try:
-    logger.debug(f"Running heartbeat for all guilds")
-    active_guild_ids = STATE_MANAGER.all_active_guild_ids()
-    for guild_id in active_guild_ids:
+
+def create_and_start_heartbeat(guild_id: int):
+  @tasks.loop(seconds = 15)
+  async def heartbeat(guild_id: int):
+    try:
+      logger.debug(f"Running heartbeat for: {guild_id}")
       url = STATE_MANAGER.get_state(guild_id, 'current_stream_url')
 
       if url is None:
-        continue
+        return
 
       # Loop through monitors and execute. Let them handle their own shit
-      stationinfo = await streamscrobbler.get_server_info(url)
+      stationinfo = streamscrobbler.get_server_info(url)
       for monitor in MONITORS:
         await monitor.execute(guild_id=guild_id, state=STATE_MANAGER.get_state(guild_id), stationinfo=stationinfo)
-  except Exception as e:
-    logger.error(f"An unhandled error occurred in the heartbeat: {e}")
+    except Exception as e:
+      logger.error(f"An unhandled error occurred in the heartbeat: {e}")
+    await asyncio.sleep(30)
+
+  _active_heartbeats[guild_id] = heartbeat.start(guild_id)
 
 
 # TODO: maybe add these checks to health monitor
