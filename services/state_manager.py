@@ -8,6 +8,7 @@ from models.models import Base, BotState
 class StateManager:
   ### Available state variables ###
   # current_stream_url = URL to playing (or about to be played) shoutcast stream
+  # private_stream = If the stream source should be presented
   # text_channel = Text channel original play command came from
   # start_time = Time the current stream started playing
   # last_active_user_time = Time the last active user was spotted in the voice channel

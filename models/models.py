@@ -10,6 +10,7 @@ class Base(DeclarativeBase):
 class GuildState(Base):
   ### Available state variables ###
   # current_stream_url = URL to playing (or about to be played) shoutcast stream
+  # private_stream = If the stream source should be presented
   # text_channel = Text channel original play command came from
   # start_time = Time the current stream started playing
   # last_active_user_time = Time the last active user was spotted in the voice channel
@@ -20,6 +21,7 @@ class GuildState(Base):
 
   guild_id: Mapped[int] = mapped_column(primary_key=True)
   current_stream_url: Mapped[str] = mapped_column(String)
+  private_stream: Mapped[bool] = mapped_column(Boolean)
   text_channel_id: Mapped[int] = mapped_column(Integer)
   start_time: Mapped[datetime] = mapped_column(DateTime)
   last_active_user_time: Mapped[datetime] = mapped_column(DateTime)

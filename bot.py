@@ -147,13 +147,15 @@ def bot_not_in_maintenance():
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 @bot_not_in_maintenance()
-async def play(interaction: discord.Interaction, url: str):
+async def play(interaction: discord.Interaction, url: str, private_stream: bool = False):
   if not is_valid_url(url):
     raise commands.BadArgument("🙇 I'm sorry, I don't know what that means!")
   if await is_cleaning_up(interaction):
     raise shout_errors.CleaningUp('Bot is still cleaning up from last session')
 
-  await interaction.response.send_message(f"Starting channel {url}")
+  STATE_MANAGER.set_state(interaction.guild_id, 'private_stream', private_stream)
+  response_message = f"Starting channel {url}" if not private_stream else "Starting channel ***OMINOUSLY***"
+  await interaction.response.send_message(response_message, ephemeral=True)
   await play_stream(interaction, url)
 
 @bot.tree.command(
@@ -669,7 +671,8 @@ async def send_song_info(guild_id: int):
     'timestamp': str(datetime.datetime.now(datetime.UTC)),
   }
   embed = discord.Embed.from_dict(embed_data)
-  embed.set_footer(text=f"Source: {url}")
+  if not STATE_MANAGER.get_state(guild_id, 'private_stream'):
+    embed.set_footer(text=f"Source: {url}")
   return await channel.send(embed=embed)
 
 # Retrieve information about the shoutcast stream
@@ -923,7 +926,6 @@ def create_and_start_heartbeat(guild_id: int):
         await monitor.execute(guild_id=guild_id, state=STATE_MANAGER.get_state(guild_id), stationinfo=stationinfo)
     except Exception as e:
       logger.error(f"An unhandled error occurred in the heartbeat: {e}")
-    await asyncio.sleep(30)
 
   _active_heartbeats[guild_id] = heartbeat.start(guild_id)
 
