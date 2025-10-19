@@ -738,7 +738,7 @@ async def refresh_stream(interaction: discord.Interaction):
   is_private = STATE_MANAGER.get_state(interaction.guild.id, 'private_stream') # Preserve private_stream state
   await stop_playback(interaction.guild)
 
-  if is_private is not False:
+  if is_private is True:
     STATE_MANAGER.set_state(interaction.guild.id, 'private_stream', is_private) # Restore private_stream state, if set.
 
   await play_stream(interaction, url)
