@@ -734,9 +734,13 @@ async def handle_stream_disconnect(guild: discord.Guild):
 
 # Resync the stream by leaving and coming back
 async def refresh_stream(interaction: discord.Interaction):
-  url = STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url')
-
+  url = STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url') # preserve current stream url
+  is_private = STATE_MANAGER.get_state(interaction.guild.id, 'private_stream') # Preserve private_stream state
   await stop_playback(interaction.guild)
+
+  if is_private is True:
+    STATE_MANAGER.set_state(interaction.guild.id, 'private_stream', is_private) # Restore private_stream state, if set.
+
   await play_stream(interaction, url)
 
 # Start playing music from the stream
@@ -861,7 +865,7 @@ async def play_stream(interaction, url):
   # And let the user know what song is playing
   await send_song_info(interaction.guild.id)
   STATE_MANAGER.set_state(interaction.guild.id, 'cleaning_up', False)
-  create_and_start_heartbeat(interaction.guild_id)
+  create_and_start_heartbeat(interaction.guild.id)
 
   return True
 
