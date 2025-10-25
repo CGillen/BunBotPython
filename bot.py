@@ -136,6 +136,7 @@ def bot_has_channel_permissions(permissions: discord.Permissions):
 def bot_not_in_maintenance():
   async def predicate(interaction: discord.Interaction):
     if STATE_MANAGER.get_maint() and not await bot.is_owner(interaction.user):
+      await interaction.response.send_message(f"🚧 This bot is currently experience maintenance. Check back later.")
       return False
     return True
   return discord.app_commands.checks.check(predicate)
@@ -630,6 +631,9 @@ async def on_command_error(interaction: discord.Interaction, error):
   elif isinstance(original_error, discord.app_commands.errors.BotMissingPermissions):
     # We don't have permission to send messages here
     error_message = f"😶 It looks like I'm missing permissions for this channel:\n{error}"
+  elif isinstance(original_error, discord.app_commands.CheckFailure):
+    # Handle these messages in the permissions check function
+    return
   else:
     # General error handler for other errors
     error_message = f"🤷 An unexpected error occurred while processing your command:\n{error}"
