@@ -34,7 +34,7 @@ class HealthMonitor(Monitor):
 
   async def handle_health_errors(self, guild_id:int, health_errors: list):
     guild = self.client.get_guild(guild_id)
-    channel = self.state_manager.get_state(guild_id, 'text_channel')
+    channel = self.client.get_channel(self.state_manager.get_state(guild_id, 'text_channel_id'))
 
     health_error_counts = self.state_manager.get_state(guild_id, 'health_error_count')
     if not health_error_counts:

@@ -136,7 +136,7 @@ def bot_has_channel_permissions(permissions: discord.Permissions):
 def bot_not_in_maintenance():
   async def predicate(interaction: discord.Interaction):
     if STATE_MANAGER.get_maint() and not await bot.is_owner(interaction.user):
-      await interaction.response.send_message(f"🚧 This bot is currently experience maintenance. Check back later.")
+      await interaction.response.send_message(f"🚧 This bot is currently experiencing maintenance. Check back later.")
       return False
     return True
   return discord.app_commands.checks.check(predicate)
@@ -327,7 +327,7 @@ async def maint(interaction: discord.Interaction, status: bool = True):
 
       active_guild_ids = STATE_MANAGER.all_active_guild_ids()
       for guild_id in active_guild_ids:
-        text_channel = STATE_MANAGER.get_state(guild_id, 'text_channel')
+        text_channel = bot.get_channel(STATE_MANAGER.get_state(guild_id, 'text_channel_id'))
         if status:
             embed_data = {
               'title': "Maintenance",
@@ -348,6 +348,8 @@ async def maint(interaction: discord.Interaction, status: bool = True):
       if status:
         await interaction.edit_original_response(content="👷 Maintenance mode enabled")
       else:
+        STATE_MANAGER.clear_state()
+        await STATE_MANAGER.clear_state_db()
         await interaction.edit_original_response(content="👷 Maintenance mode disabled")
 
     else:
@@ -655,7 +657,7 @@ def is_valid_url(url):
 # Find information about the playing station & send that as an embed to the original text channel
 async def send_song_info(guild_id: int):
   url = STATE_MANAGER.get_state(guild_id, 'current_stream_url')
-  channel = STATE_MANAGER.get_state(guild_id, 'text_channel')
+  channel = bot.get_channel(STATE_MANAGER.get_state(guild_id, 'text_channel_id'))
   stationinfo = await get_station_info(url)
 
   if not stationinfo['metadata']:
@@ -700,7 +702,7 @@ async def handle_stream_disconnect(guild: discord.Guild):
     logger.info(f"[{guild.id}]: checking for stream disconnected")
 
     # Get current state before clearing
-    channel = STATE_MANAGER.get_state(guild.id, 'text_channel')
+    channel = bot.get_channel(STATE_MANAGER.get_state(guild.id, 'text_channel_id'))
 
     # Notify users if possible
     if channel:
@@ -739,12 +741,7 @@ async def handle_stream_disconnect(guild: discord.Guild):
 # Resync the stream by leaving and coming back
 async def refresh_stream(interaction: discord.Interaction):
   url = STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url') # preserve current stream url
-  is_private = STATE_MANAGER.get_state(interaction.guild.id, 'private_stream') # Preserve private_stream state
   await stop_playback(interaction.guild)
-
-  if is_private is True:
-    STATE_MANAGER.set_state(interaction.guild.id, 'private_stream', is_private) # Restore private_stream state, if set.
-
   await play_stream(interaction, url)
 
 # Start playing music from the stream
@@ -863,7 +860,7 @@ async def play_stream(interaction, url):
 
   # Everything was successful, lets keep all the data
   STATE_MANAGER.set_state(interaction.guild.id, 'current_stream_url', url)
-  STATE_MANAGER.set_state(interaction.guild.id, 'text_channel', interaction.channel)
+  STATE_MANAGER.set_state(interaction.guild.id, 'text_channel_id', interaction.channel.id)
   STATE_MANAGER.set_state(interaction.guild.id, 'start_time', datetime.datetime.now(datetime.UTC))
 
   # And let the user know what song is playing

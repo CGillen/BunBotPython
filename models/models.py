@@ -5,7 +5,16 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from services.interfaces import ErrorStates
 
 class Base(DeclarativeBase):
-  pass
+  __abstract__ = True
+
+  def to_dict(self):
+    """
+    Converts the ORM object to a dictionary, including only mapped columns.
+    """
+    return {
+      column.name: getattr(self, column.name)
+      for column in self.__table__.columns
+    }
 
 class GuildState(Base):
   ### Available state variables ###
