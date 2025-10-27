@@ -1,9 +1,9 @@
 from discord import Client
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from models.models import Base, BotState
+from models.models import Base, BotState, GuildState
 
 class StateManager:
   ### Available state variables ###
@@ -17,13 +17,13 @@ class StateManager:
   # ffmpeg_process_pid = PID for the FFMPEG process associated with the guild
   def __init__(self, bot: Client=None):
     self.bot = bot
-    self.state = {}
+    self.guild_state = {}
     self.bot_state = BotState(id=1, maint=False)
     self.db_engine = None
     self.ASYNC_SESSION_LOCAL = None
 
   bot: Client
-  state: dict[int, object]
+  guild_state: dict[int, GuildState]
   bot_state: BotState
 
 #TODO: Clean up
@@ -39,33 +39,45 @@ class StateManager:
 
   def get_state(self, guild_id: int=None, var: str=None):
     # Make sure guild is setup for state
-    if guild_id not in self.state:
-      self.state[guild_id] = {}
+    if guild_id not in self.guild_state:
+      self.guild_state[guild_id] = GuildState()
     # Return whole state object if no var name was passed
     if var is None:
-      return self.state[guild_id]
-    # Make sure var is available in guild state
-    if var not in self.state[guild_id]:
-      return None
+      return self.guild_state[guild_id].to_dict()
 
-    return self.state[guild_id][var]
+    return getattr(self.guild_state[guild_id], var, None)
 
   # Setter for state of a guild
   def set_state(self, guild_id: int=None, var: str=None, val: object=None):
     # Make sure guild is setup for state
-    if guild_id not in self.state:
-      self.state[guild_id] = {}
-    # Make sure var is available in guild state
-    if var not in self.state[guild_id]:
-      self.state[guild_id][var] = None
+    if guild_id not in self.guild_state:
+      self.guild_state[guild_id] = GuildState()
 
-    self.state[guild_id][var] = val
+    # Make sure guild state has guild_id value
+    setattr(self.guild_state[guild_id], 'guild_id', guild_id)
+
+    # Make sure var is available in guild state
+    if not hasattr(self.guild_state[guild_id], var):
+      setattr(self.guild_state[guild_id], var, None)
+
+    setattr(self.guild_state[guild_id], var, val)
     return val
 
   # Clear out state so we can start all over
-  def clear_state(self, guild_id: int=None):
+  def clear_state(self, guild_id: int=None, force: bool=False):
     # Just throw it all away, idk, maybe we'll need to close and disconnect stuff later
-    self.state[guild_id] = {}
+    if not guild_id:
+      self.guild_state = {}
+      return
+
+    saved_state = {
+      'text_channel_id': self.guild_state[guild_id].text_channel_id,
+      'private_stream': self.guild_state[guild_id].private_stream
+    }
+    self.guild_state[guild_id] = GuildState()
+    if not force:
+      for key,val in saved_state.items():
+        setattr(self.guild_state[guild_id], key, val)
 
   # Update maintenance status
   async def set_maint(self, status: bool):
@@ -77,12 +89,12 @@ class StateManager:
   # Get all ids of guilds that have a valid voice clients or server state
   def all_active_guild_ids(self):
     active_ids = []
-    for guild_id in self.state.keys():
+    for guild_id in self.guild_state.keys():
       # Only consider active if state exists and voice client is connected
       guild = self.bot.get_guild(guild_id)
 
       # Sometimes we need to exclude some state variables when considering if the guild is active
-      vars_to_exclude = ['cleaning_up']
+      vars_to_exclude = ['cleaning_up', 'text_channel_id', 'private_stream']
       temp_state = {key: value for key, value in self.get_state(guild_id).items() if key not in vars_to_exclude}
 
       state_active = bool(temp_state)
@@ -94,6 +106,9 @@ class StateManager:
   async def save_state(self):
     async with self.ASYNC_SESSION_LOCAL() as session:
       session.add(self.bot_state)
+      guild_states = list(self.guild_state.values())
+      for guild_state in guild_states:
+        await session.merge(guild_state)
       await session.commit()
   async def load_state(self):
     async with self.ASYNC_SESSION_LOCAL() as session:
@@ -102,3 +117,14 @@ class StateManager:
       await session.commit()
     self.bot_state = result.scalars().first()
     self.bot_state = self.bot_state or BotState(id=1,maint=0)
+    async with self.ASYNC_SESSION_LOCAL() as session:
+      stmt = select(GuildState)
+      result = await session.execute(stmt)
+      await session.commit()
+    for guild_state in result.scalars().all():
+      self.guild_state[guild_state.guild_id] = guild_state
+  async def clear_state_db(self):
+    async with self.ASYNC_SESSION_LOCAL() as session:
+      stmt = delete(GuildState)
+      await session.execute(stmt)
+      await session.commit()
