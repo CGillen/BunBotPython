@@ -7,7 +7,6 @@ import os, datetime, signal
 import logging, logging.handlers
 import urllib
 import validators
-import re
 import psutil
 from services.health_monitor import HealthMonitor
 from services.metadata_monitor import MetadataMonitor
