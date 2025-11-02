@@ -686,7 +686,7 @@ def url_slicer(url: str, max_display: int = 10) -> str:
       display = f"{sliced_url}{path}"
   except Exception:
     logger.warning(f"an unexpected error occurred while slicing port: {url}")
-    display - "Error-slicing-URL"
+    display = "Error-slicing-URL"
     pass
   # Keep the full URL (with scheme) as the hyperlink target
   return f"[{display}]({url_raw})"
