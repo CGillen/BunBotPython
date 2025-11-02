@@ -7,6 +7,7 @@ import os, datetime, signal
 import logging, logging.handlers
 import urllib
 import validators
+import re
 import psutil
 from services.health_monitor import HealthMonitor
 from services.metadata_monitor import MetadataMonitor
@@ -654,6 +655,43 @@ async def on_command_error(interaction: discord.Interaction, error):
 def is_valid_url(url):
   return validators.url(url)
 
+
+def url_slicer(url: str, max_display: int = 10) -> str:
+  """
+  Return a markdown link for use in embed fields. If the Path is longer than
+  max_display value, return an ellipsized label that preserves the hostname and 
+  beginning of the path.
+
+  The returned string is intended to be placed directly into an embed field
+  value so it will be clickable in Discord.
+  """
+  if not url:
+    return ""
+
+  slice = urllib.parse.urlparse(url)
+  url_raw = str(url)
+  path_raw = slice.path.rstrip('/')
+  sliced_url = slice.hostname
+  port = slice.port
+  # Slice the path if necessary
+  if len(path_raw) <= max_display:
+    path = path_raw
+  else:
+    path = "%s..." % (path_raw[:max_display])
+
+  # If port is present and is not the default HTTP/HTTPS port, include it
+  try:
+    if port and int(port) not in (80, 443):
+      display = f"{sliced_url}:{port}{path}"
+    else: 
+      display = f"{sliced_url}{path}"
+  except Exception:
+    logger.warning(f"an unexpected error occurred while slicing port: {url}")
+    display - "Error-slicing-URL"
+    pass
+  # Keep the full URL (with scheme) as the hyperlink target
+  return f"[{display}]({url_raw})"
+
 # Find information about the playing station & send that as an embed to the original text channel
 async def send_song_info(guild_id: int):
   url = STATE_MANAGER.get_state(guild_id, 'current_stream_url')
@@ -674,12 +712,41 @@ async def send_song_info(guild_id: int):
     'title': "Now Playing",
     'color': 0x0099ff,
     'description': f"🎶 {stationinfo['metadata']['song']} 🎶",
-    'timestamp': str(datetime.datetime.now(datetime.UTC)),
+    # 'timestamp': str(datetime.datetime.now(datetime.UTC)),
   }
+
   embed = discord.Embed.from_dict(embed_data)
-  if not STATE_MANAGER.get_state(guild_id, 'private_stream'):
-    embed.set_footer(text=f"Source: {url}")
+  sliced_url = url_slicer(url)
+  bitrate = stationinfo['metadata'].get('bitrate', None)
+  now_utc = datetime.datetime.now(datetime.timezone.utc)
+  discord_time = f"<t:{int(now_utc.timestamp())}:R>"
+
+  # Set information about the source in the "footer"
+  if STATE_MANAGER.get_state(guild_id, 'private_stream'):
+    # stream is private, do not show URL
+    try:
+      if bitrate not in (None, 0):
+        embed.add_field(name="\u200b", value=f"Source: `Private` • Bitrate: {bitrate}kbps • {discord_time}", inline=True)
+      else:
+        embed.add_field(name="\u200b", value=f"Source: `Private` • {discord_time}", inline=True)
+    except Exception:
+      # Legacy Footer fallback
+        logger.warning("Failed to add fields to embed, falling back to legacy footer")
+        embed.set_footer(text=f"Source: Private")
+  else:
+      # stream is public, show URL
+      try:
+        if bitrate not in (None, 0):
+          embed.add_field(name="\u200b", value=f"Source: {sliced_url} • Bitrate: {bitrate}kbps • {discord_time}", inline=True)
+        else:
+          embed.add_field(name="\u200b", value=f"Source: {sliced_url} • {discord_time}", inline=True) 
+      except Exception:
+        # Legacy Footer fallback
+          logger.warning("Failed to add fields to embed, falling back to legacy footer")
+          embed.set_footer(text=f"Source: {url}")
   return await channel.send(embed=embed)
+  
+
 
 # Retrieve information about the shoutcast stream
 async def get_station_info(url: str):
@@ -811,15 +878,19 @@ async def play_stream(interaction, url):
       await interaction.edit_original_response(content="Failed to connect to voice channel. Please try again.")
       return False
 
-  # Pipe music stream to FFMpeg:
+  # TRY to Pipe music stream to FFMpeg:
 
   # We love adhering to SHOUTcast recommended buffer sizes arounder here! yay!
   #                  MARKER BYTES REQUIRED FOR PROPER SYNC!
   # 4080 bytes per tick * 8 chunks = 32640 + 8 marker bytes = 32648 bits buffer (8 chunks)
   # 4080 bytes per tick * 4 Chunks = 16320 + 4 marker bytes = 16324 bits per analysis (4 chunks)
-
-  music_stream = discord.FFmpegOpusAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0")
-  await asyncio.sleep(1)  # Give FFmpeg a moment to start
+  try:
+    music_stream = discord.FFmpegOpusAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0")
+    await asyncio.sleep(1)  # Give FFmpeg a moment to start
+  except Exception as e:
+    logger.error(f"Failed to start FFmpeg stream: {e}")
+    await interaction.edit_original_response(content="Failed to start stream processing. Please try again.")
+    return False
 
   # Try to detect and record the ffmpeg subprocess PID so we can clean it up later
   try:
