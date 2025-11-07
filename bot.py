@@ -11,6 +11,7 @@ import psutil
 from services.health_monitor import HealthMonitor
 from services.metadata_monitor import MetadataMonitor
 from services.state_manager import StateManager
+from pls_parser import parse_pls
 import shout_errors
 import urllib_hack
 from dotenv import load_dotenv
@@ -810,8 +811,9 @@ async def refresh_stream(interaction: discord.Interaction):
   await stop_playback(interaction.guild)
   await play_stream(interaction, url)
 
-# Start playing music from the stream
-#  Check connection/status of server
+#  Start playing music from the stream
+#  Check connection/status of stream
+#  Check if stream link is .pls and parse it first
 #  Get stream connection to server
 #  Connect to voice channel
 #  Start ffmpeg transcoding stream
@@ -821,6 +823,16 @@ async def play_stream(interaction, url):
   if not url:
     logger.warning("No stream currently set, can't play nothing")
     raise shout_errors.NoStreamSelected
+    
+  # Handle .pls playlist files
+  if url.lower().endswith('.pls'):
+    await interaction.edit_original_response(content="❓ Looks Like this is a `.pls`, Let's see if I can figure it out...")
+    stream_url = await parse_pls(url)
+    if not stream_url:
+      # catch all
+      logger.error("Failed to parse .pls or no valid stream URL found")
+      raise shout_errors.StreamOffline()
+    url = stream_url
 
   # Connect to voice channel author is currently in
   voice_state = getattr(interaction.user, 'voice', None)   # voice channel check, explicitly set to None if not found for some reason
