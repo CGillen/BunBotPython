@@ -831,12 +831,12 @@ async def play_stream(interaction, url):
   if pls != -1:
     await interaction.edit_original_response(content="❓ Looks Like this is a `.pls`, Let's see if I can figure it out...")
     stream_url = await parse_pls(url)
-  if not stream_url:
-    # catch all
-    logger.error("Failed to parse .pls or no valid stream URL found")
-    raise shout_errors.StreamOffline()
-  url = stream_url
-
+    if not stream_url:
+      # catch all
+      logger.error("Failed to parse .pls or no valid stream URL found")
+      raise shout_errors.StreamOffline()
+    url = stream_url
+    
   # Connect to voice channel author is currently in
   voice_state = getattr(interaction.user, 'voice', None)   # voice channel check, explicitly set to None if not found for some reason
   voice_channel = voice_state.channel if voice_state and getattr(voice_state, 'channel', None) else None
