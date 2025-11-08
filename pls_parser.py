@@ -26,7 +26,7 @@ async def parse_pls(url: str) -> Optional[str]:
         }
         # Hide the console window on Windows
         if os.name == 'nt':
-            proc_args['creationflags'] = asyncio.subprocess.CREATE_NO_WINDOW
+            proc_args['creationflags'] = subprocess.CREATE_NO_WINDOW
 
         # Remove extra quoting around the user-agent argument; pass url directly
         curl = await asyncio.create_subprocess_exec(
