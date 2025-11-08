@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import subprocess
 from typing import Optional
 
 logger = logging.getLogger('discord')
@@ -18,10 +20,18 @@ async def parse_pls(url: str) -> Optional[str]:
     try:
         # Use curl to stream the playlist file line by line
         # iTunes user-agent to mimic a media player (safest bet for servers that block curl)
+        proc_args = {
+            'stdout': asyncio.subprocess.PIPE,
+            'stderr': asyncio.subprocess.PIPE,
+        }
+        # Hide the console window on Windows
+        if os.name == 'nt':
+            proc_args['creationflags'] = asyncio.subprocess.CREATE_NO_WINDOW
+
+        # Remove extra quoting around the user-agent argument; pass url directly
         curl = await asyncio.create_subprocess_exec(
-            'curl', '-L', '-N', '-A', '"iTunes/9.1.1"', '--silent', f'{url}',
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            'curl', '-L', '-N', '-A', 'iTunes/9.1.1', '--silent', url,
+            **proc_args
         )
         # check if we have a valid stdout, if not stop early 
         while True:
