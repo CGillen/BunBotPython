@@ -11,6 +11,7 @@ import psutil
 from services.health_monitor import HealthMonitor
 from services.metadata_monitor import MetadataMonitor
 from services.state_manager import StateManager
+from pls_parser import parse_pls
 import shout_errors
 import urllib_hack
 from dotenv import load_dotenv
@@ -810,8 +811,9 @@ async def refresh_stream(interaction: discord.Interaction):
   await stop_playback(interaction.guild)
   await play_stream(interaction, url)
 
-# Start playing music from the stream
-#  Check connection/status of server
+#  Start playing music from the stream
+#  Check connection/status of stream
+#  Check if stream link is .pls and parse it first
 #  Get stream connection to server
 #  Connect to voice channel
 #  Start ffmpeg transcoding stream
@@ -821,6 +823,20 @@ async def play_stream(interaction, url):
   if not url:
     logger.warning("No stream currently set, can't play nothing")
     raise shout_errors.NoStreamSelected
+    
+  # Handle .pls playlist files
+  slice = urllib.parse.urlparse(url)
+  path = slice.path 
+  pls = path.find('.pls')
+  if pls != -1:
+    logger.debug(f"Detected .pls file, attempting to parse: {url}")
+    await interaction.edit_original_response(content="❓ Looks Like this is a `.pls`, Let's see if I can figure it out...")
+    stream_url = await parse_pls(url)
+    if not stream_url:
+      # catch all
+      logger.error("Failed to parse .pls or no valid stream URL found")
+      raise shout_errors.StreamOffline()
+    url = stream_url
 
   # Connect to voice channel author is currently in
   voice_state = getattr(interaction.user, 'voice', None)   # voice channel check, explicitly set to None if not found for some reason
@@ -884,7 +900,7 @@ async def play_stream(interaction, url):
   # 4080 bytes per tick * 8 chunks = 32640 + 8 marker bytes = 32648 bits buffer (8 chunks)
   # 4080 bytes per tick * 4 Chunks = 16320 + 4 marker bytes = 16324 bits per analysis (4 chunks)
   try:
-    music_stream = discord.FFmpegOpusAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0")
+    music_stream = discord.FFmpegOpusAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0 -protocol_whitelist http,https,tls,pipe")
     await asyncio.sleep(1)  # Give FFmpeg a moment to start
   except Exception as e:
     logger.error(f"Failed to start FFmpeg stream: {e}")
