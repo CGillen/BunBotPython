@@ -32,12 +32,13 @@ async def parse_pls(url: str) -> Optional[str]:
             try:
                 string = output.decode('utf-8').strip()
                 if string.lower().startswith('file1='):
-                    stream_url = string.split('=', 1)[1].strip()
+                    stream_url = string.split('=', 1)[1].strip()                        
                     try:
                         curl.kill()  # we got it, die now
                         await curl.wait()  # Wait for it to die
                     except:
                         pass  # closed by itself
+                    logger.debug(f"Found Stream Link to be: {stream_url}")
                     return stream_url
             except UnicodeDecodeError:
                 continue
