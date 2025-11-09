@@ -130,4 +130,5 @@ class StateManager:
     async with self.ASYNC_SESSION_LOCAL() as session:
       stmt = delete(GuildState)
       await session.execute(stmt)
+      session.add(self.bot_state)
       await session.commit()

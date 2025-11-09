@@ -355,10 +355,14 @@ async def maint(interaction: discord.Interaction, status: bool = True):
       if status:
         await interaction.edit_original_response(content="💾 saving state...")
         await STATE_MANAGER.save_state()
+        asyncio.sleep(5)
         await interaction.edit_original_response(content="👷 Maintenance mode enabled")
       else:
-        STATE_MANAGER.clear_state()
+        await interaction.edit_original_response(content="🧼 Purging State + DB...")
+        STATE_MANAGER.clear_state(force=True)
         await STATE_MANAGER.clear_state_db()
+        asyncio.sleep(5)
+        await STATE_MANAGER.set_maint(status=status)
         await interaction.edit_original_response(content="👷 Maintenance mode disabled")
 
     else:
