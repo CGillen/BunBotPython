@@ -325,11 +325,11 @@ async def maint(interaction: discord.Interaction, status: bool = True):
 
       await interaction.response.send_message("🛠️ Toggling maintenance mode... please wait")
       await STATE_MANAGER.set_maint(status=status)
-
       active_guild_ids = STATE_MANAGER.all_active_guild_ids()
       for guild_id in active_guild_ids:
         text_channel = bot.get_channel(STATE_MANAGER.get_state(guild_id, 'text_channel_id'))
-        if status:
+        is_active = STATE_MANAGER.get_state(guild_id, 'is_active') or False
+        if status and is_active is True:
             embed_data = {
               'title': "Maintenance",
               'color': 0xfce053,
@@ -337,20 +337,32 @@ async def maint(interaction: discord.Interaction, status: bool = True):
               'timestamp': str(datetime.datetime.now(datetime.UTC)),
             }
             await stop_playback(bot.get_guild(guild_id))
+            STATE_MANAGER.set_state(guild_id, 'was_active', True)
+            embed = discord.Embed.from_dict(embed_data)
+            await text_channel.send(embed=embed)
         else:
-          embed_data = {
-            'title': "Maintenance",
-            'color': 0xfce053,
-            'description': "Maintenance has concluded.",
-            'timestamp': str(datetime.datetime.now(datetime.UTC)),
+          was_active = STATE_MANAGER.get_state(guild_id, 'was_active') or False
+          if was_active is True and status == False:
+            embed_data = {
+              'title': "Maintenance",
+              'color': 0xfce053,
+              'description': "Maintenance has concluded.",
+              'timestamp': str(datetime.datetime.now(datetime.UTC)),
           }
-        embed = discord.Embed.from_dict(embed_data)
-        await text_channel.send(embed=embed)
+            embed = discord.Embed.from_dict(embed_data)
+            await text_channel.send(embed=embed)
+
       if status:
+        await interaction.edit_original_response(content="💾 saving state...")
+        await STATE_MANAGER.save_state()
+        asyncio.sleep(5)
         await interaction.edit_original_response(content="👷 Maintenance mode enabled")
       else:
-        STATE_MANAGER.clear_state()
+        await interaction.edit_original_response(content="🧼 Purging State + DB...")
+        STATE_MANAGER.clear_state(force=True)
         await STATE_MANAGER.clear_state_db()
+        asyncio.sleep(5)
+        await STATE_MANAGER.set_maint(status=status)
         await interaction.edit_original_response(content="👷 Maintenance mode disabled")
 
     else:
@@ -948,6 +960,7 @@ async def play_stream(interaction, url):
   STATE_MANAGER.set_state(interaction.guild.id, 'current_stream_url', url)
   STATE_MANAGER.set_state(interaction.guild.id, 'text_channel_id', interaction.channel.id)
   STATE_MANAGER.set_state(interaction.guild.id, 'start_time', datetime.datetime.now(datetime.UTC))
+  STATE_MANAGER.set_state(interaction.guild.id, 'is_active', True)
 
   # And let the user know what song is playing
   await send_song_info(interaction.guild.id)

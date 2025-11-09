@@ -23,19 +23,23 @@ class GuildState(Base):
   # text_channel = Text channel original play command came from
   # start_time = Time the current stream started playing
   # last_active_user_time = Time the last active user was spotted in the voice channel
+  # is_active = Boolean for if the bot is currently active in the guild True|None
+  # was_active = Boolean for if the bot was active before going into maintenance True|None
   # cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
   # health_error_count = Int number of times a health error occurred in a row
   # ffmpeg_process_pid = PID for the FFMPEG process associated with the guild
   __tablename__ = "guild_state"
 
   guild_id: Mapped[int] = mapped_column(primary_key=True)
-  current_stream_url: Mapped[str] = mapped_column(String)
-  private_stream: Mapped[bool] = mapped_column(Boolean)
-  text_channel_id: Mapped[int] = mapped_column(Integer)
-  start_time: Mapped[datetime] = mapped_column(DateTime)
-  last_active_user_time: Mapped[datetime] = mapped_column(DateTime)
-  cleaning_up: Mapped[bool] = mapped_column(Boolean)
-  ffmpeg_process_pid: Mapped[int] = mapped_column(Integer)
+  current_stream_url: Mapped[str] = mapped_column(String, nullable=True)
+  private_stream: Mapped[bool] = mapped_column(Boolean, nullable=True)
+  text_channel_id: Mapped[int] = mapped_column(Integer, nullable=True)
+  start_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+  last_active_user_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+  cleaning_up: Mapped[bool] = mapped_column(Boolean, nullable=True)
+  is_active: Mapped[bool] = mapped_column(Boolean, nullable=True)
+  was_active: Mapped[bool] = mapped_column(Boolean, nullable=True)
+  ffmpeg_process_pid: Mapped[int] = mapped_column(Integer, nullable=True)
   health_error_count: list[{ErrorStates, int}] = []
 
 class BotState(Base):
