@@ -12,6 +12,7 @@ class StateManager:
   # text_channel = Text channel original play command came from
   # start_time = Time the current stream started playing
   # last_active_user_time = Time the last active user was spotted in the voice channel
+  # is_active = Boolean for if the bot is currently active in the guild True|None
   # cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
   # health_error_count = Int number of times a health error occurred in a row
   # ffmpeg_process_pid = PID for the FFMPEG process associated with the guild
@@ -72,7 +73,8 @@ class StateManager:
 
     saved_state = {
       'text_channel_id': self.guild_state[guild_id].text_channel_id,
-      'private_stream': self.guild_state[guild_id].private_stream
+      'private_stream': self.guild_state[guild_id].private_stream,
+      'is_active': self.guild_state[guild_id].is_active
     }
     self.guild_state[guild_id] = GuildState()
     if not force:
@@ -94,11 +96,11 @@ class StateManager:
       guild = self.bot.get_guild(guild_id)
 
       # Sometimes we need to exclude some state variables when considering if the guild is active
-      vars_to_exclude = ['cleaning_up', 'text_channel_id', 'private_stream']
+      vars_to_exclude = ['cleaning_up', 'text_channel_id', 'private_stream', 'is_active']
       temp_state = {key: value for key, value in self.get_state(guild_id).items() if key not in vars_to_exclude}
 
       state_active = bool(temp_state)
-      vc_active = guild and guild.voice_client and guild.voice_client.is_connected()
+      vc_active = guild and guild.voice_client and guild.voice_client.is_connected() 
       if state_active or vc_active:
         active_ids.append(guild_id)
     return active_ids
