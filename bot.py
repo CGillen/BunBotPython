@@ -352,9 +352,6 @@ async def maint(interaction: discord.Interaction, status: bool = True):
             await text_channel.send(embed=embed)
 
       if status:
-        await interaction.edit_original_response(content="💾 saving state...")
-        STATE_MANAGER.save_state()
-        asyncio.sleep(3)  # Small delay to ensure state is saved before continuing
         await interaction.edit_original_response(content="👷 Maintenance mode enabled")
       else:
         STATE_MANAGER.clear_state()

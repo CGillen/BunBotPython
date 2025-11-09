@@ -73,8 +73,7 @@ class StateManager:
 
     saved_state = {
       'text_channel_id': self.guild_state[guild_id].text_channel_id,
-      'private_stream': self.guild_state[guild_id].private_stream,
-      'is_active': self.guild_state[guild_id].is_active
+      'private_stream': self.guild_state[guild_id].private_stream
     }
     self.guild_state[guild_id] = GuildState()
     if not force:
