@@ -337,10 +337,11 @@ async def maint(interaction: discord.Interaction, status: bool = True):
               'timestamp': str(datetime.datetime.now(datetime.UTC)),
             }
             await stop_playback(bot.get_guild(guild_id))
+            STATE_MANAGER.set_state(guild_id, 'was_active', True)
             embed = discord.Embed.from_dict(embed_data)
             await text_channel.send(embed=embed)
         else:
-          was_active = STATE_MANAGER.get_state(guild_id, 'is_active') or False
+          was_active = STATE_MANAGER.get_state(guild_id, 'was_active') or False
           if was_active is True and status == False:
             embed_data = {
               'title': "Maintenance",
@@ -352,6 +353,8 @@ async def maint(interaction: discord.Interaction, status: bool = True):
             await text_channel.send(embed=embed)
 
       if status:
+        await interaction.edit_original_response(content="💾 saving state...")
+        await STATE_MANAGER.save_state()
         await interaction.edit_original_response(content="👷 Maintenance mode enabled")
       else:
         STATE_MANAGER.clear_state()

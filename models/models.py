@@ -24,6 +24,7 @@ class GuildState(Base):
   # start_time = Time the current stream started playing
   # last_active_user_time = Time the last active user was spotted in the voice channel
   # is_active = Boolean for if the bot is currently active in the guild True|None
+  # was_active = Boolean for if the bot was active before going into maintenance True|None
   # cleaning_up = Boolean for if the bot is currently stopping/cleaning up True|None
   # health_error_count = Int number of times a health error occurred in a row
   # ffmpeg_process_pid = PID for the FFMPEG process associated with the guild
@@ -37,6 +38,7 @@ class GuildState(Base):
   last_active_user_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
   cleaning_up: Mapped[bool] = mapped_column(Boolean, nullable=True)
   is_active: Mapped[bool] = mapped_column(Boolean, nullable=True)
+  was_active: Mapped[bool] = mapped_column(Boolean, nullable=True)
   ffmpeg_process_pid: Mapped[int] = mapped_column(Integer, nullable=True)
   health_error_count: list[{ErrorStates, int}] = []
 
