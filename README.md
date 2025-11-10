@@ -29,6 +29,11 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/J3J61BNDZO)
 
 # So what's new?
+- `better maintenance handling!  🎉`
+- `clicky links! 🎉`
+- `url slicer for shorter URLs!`
+- `bitrate added to footers`
+- `PLS parser for pls enjoyment 🎉`
 - `Maint Embed added to let the audience know when it's time for service! 🎉`
 - `More-Better-extra Handling for ~SLOOOOOWERRRR~ servers`
 - `Implemented robust state manager for speedy recovery! 🎉`
@@ -52,6 +57,6 @@ EPIC translation done by: [CGillen](https://github.com/CGillen)!
 - `Changed audio receiver library to Discord integrated`
 - `Migrated to Python!`
 - `Hac-I mean added ICY support into urllib.py`
-- `16 Bugs Squashed! 🎉`
+- `21 Bugs Squashed! 🎉`
   
 <sub>SHOUTcast is a registered trademark of NULLsoft, Bunbot! is in no way affiliated with Nullsoft and their respective copyright holders.</sub>
