@@ -155,10 +155,10 @@ async def play(interaction: discord.Interaction, url: str, private_stream: bool 
   if await is_cleaning_up(interaction):
     raise shout_errors.CleaningUp('Bot is still cleaning up from last session')
 
-  STATE_MANAGER.set_state(interaction.guild_id, 'private_stream', private_stream)
   response_message = f"Starting channel {url}" if not private_stream else "Starting channel ***OMINOUSLY***"
   await interaction.response.send_message(response_message, ephemeral=True)
-  await play_stream(interaction, url)
+  if await play_stream(interaction, url):
+    STATE_MANAGER.set_state(interaction.guild_id, 'private_stream', private_stream)
 
 @bot.tree.command(
     name='leave',
@@ -671,7 +671,7 @@ def is_valid_url(url):
 def url_slicer(url: str, max_display: int = 10) -> str:
   """
   Return a markdown link for use in embed fields. If the Path is longer than
-  max_display value, return an ellipsized label that preserves the hostname and 
+  max_display value, return an ellipsized label that preserves the hostname and
   beginning of the path.
 
   The returned string is intended to be placed directly into an embed field
@@ -680,11 +680,11 @@ def url_slicer(url: str, max_display: int = 10) -> str:
   if not url:
     return ""
 
-  slice = urllib.parse.urlparse(url)
+  sliced_url = urllib.parse.urlparse(url)
   url_raw = str(url)
-  path_raw = slice.path.rstrip('/')
-  sliced_url = slice.hostname
-  port = slice.port
+  path_raw = sliced_url.path.rstrip('/')
+  sliced_url = sliced_url.hostname
+  port = sliced_url.port
   # Slice the path if necessary
   if len(path_raw) <= max_display:
     path = path_raw
@@ -695,7 +695,7 @@ def url_slicer(url: str, max_display: int = 10) -> str:
   try:
     if port and int(port) not in (80, 443):
       display = f"{sliced_url}:{port}{path}"
-    else: 
+    else:
       display = f"{sliced_url}{path}"
   except Exception:
     logger.warning(f"an unexpected error occurred while slicing port: {url}")
@@ -751,13 +751,13 @@ async def send_song_info(guild_id: int):
         if bitrate not in (None, 0):
           embed.add_field(name="\u200b", value=f"Source: {sliced_url} • Bitrate: {bitrate}kbps • {discord_time}", inline=True)
         else:
-          embed.add_field(name="\u200b", value=f"Source: {sliced_url} • {discord_time}", inline=True) 
+          embed.add_field(name="\u200b", value=f"Source: {sliced_url} • {discord_time}", inline=True)
       except Exception:
         # Legacy Footer fallback
           logger.warning("Failed to add fields to embed, falling back to legacy footer")
           embed.set_footer(text=f"Source: {url}")
   return await channel.send(embed=embed)
-  
+
 
 
 # Retrieve information about the shoutcast stream
@@ -835,10 +835,10 @@ async def play_stream(interaction, url):
   if not url:
     logger.warning("No stream currently set, can't play nothing")
     raise shout_errors.NoStreamSelected
-    
+
   # Handle .pls playlist files
-  slice = urllib.parse.urlparse(url)
-  path = slice.path 
+  sliced_url = urllib.parse.urlparse(url)
+  path = sliced_url.path
   pls = path.find('.pls')
   if pls != -1:
     logger.debug(f"Detected .pls file, attempting to parse: {url}")
