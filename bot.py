@@ -889,7 +889,7 @@ async def play_stream(interaction, url):
 
   # Try to get an http stream connection to the ... stream
   try:
-    resp = urllib.request.urlopen(url, timeout=10)
+    urllib.request.urlopen(url, timeout=10)
   except Exception as error: # if there is an error, let the user know.
     logger.error(f"Failed to connect to stream: {error}")
     await interaction.edit_original_response(content="Error fetching stream. Maybe the stream is down?")
@@ -898,11 +898,16 @@ async def play_stream(interaction, url):
   # Try to connect to voice chat, and only consider connected if both conditions met
   if not voice_client or not voice_client.is_connected():
     try:
-      voice_client = await voice_channel.connect()
+      voice_client = await voice_channel.connect(timeout=7)
       logger.info("Connected to voice channel for playback")
     except Exception as e:
       logger.error(f"Failed to connect to voice channel: {e}")
-      await interaction.edit_original_response(content="Failed to connect to voice channel. Please try again.")
+      max_users = voice_channel.user_limit
+      user_count = len(voice_channel.members)
+      if user_count >= max_users:
+        await interaction.edit_original_response(content="There's no room for me in there 🥺")
+      else:
+        await interaction.edit_original_response(content="Failed to connect to voice channel. Please try again.")
       return False
 
   # TRY to Pipe music stream to FFMpeg:
