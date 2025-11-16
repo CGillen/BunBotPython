@@ -18,11 +18,11 @@ import urllib_hack
 from dotenv import load_dotenv
 from pathlib import Path
 from streamscrobbler import streamscrobbler
-from favorites_manager import get_favorites_manager
-from permissions import get_permission_manager, can_set_favorites_check, can_remove_favorites_check, can_manage_roles_check
-from stream_validator import get_stream_validator
-from input_validator import get_input_validator
-from ui_components import FavoritesView, create_favorites_embed, create_favorites_list_embed, create_role_setup_embed, ConfirmationView
+# from favorites_manager import get_favorites_manager
+# from permissions import get_permission_manager, can_set_favorites_check, can_remove_favorites_check, can_manage_roles_check
+# from stream_validator import get_stream_validator
+# from input_validator import get_input_validator
+# from ui_components import FavoritesView, create_favorites_embed, create_favorites_list_embed, create_role_setup_embed, ConfirmationView
 
 load_dotenv()  # take environment variables from .env.
 
@@ -384,247 +384,279 @@ async def add_favorite(interaction: discord.Interaction, url: str, station_name:
   logger.debug("[%s] Attempting to add %s to %s favorites", interaction.guild_id, url, interaction.user.name)
   if await PERSONAL_FAVORITES_MANAGER.create_user_favorite(interaction.user.id, stream_url=url, station_name=station_name):
     logger.debug("[%s] Add success", interaction.guild_id)
-    await interaction.response.send_message(content="Favorite added!", ephemeral=False)
+    await interaction.response.send_message(content="Favorite added!", ephemeral=True)
   else:
     logger.debug("[%s] Add failed", interaction.guild_id)
-    await interaction.response.send_message(content="Failed to add favorite", ephemeral=False)
-
-@bot.tree.command(
-    name='set-favorite',
-    description="Add a radio station to this server's favorites"
-)
-@discord.app_commands.checks.cooldown(rate=1, per=5)
-async def set_favorite(interaction: discord.Interaction, url: str, name: str = None):
-  # Check permissions
-  perm_manager = get_permission_manager()
-  if not perm_manager.can_set_favorites(interaction.guild.id, interaction.user):
-    await interaction.response.send_message(
-      "❌ You don't have permission to set favorites. Ask an admin to assign you the appropriate role.",
-      ephemeral=True
-    )
-    return
-
-  # Validate URL format first
-  if not is_valid_url(url):
-    await interaction.response.send_message("❌ Please provide a valid URL.", ephemeral=True)
-    return
-
-  await interaction.response.send_message("🔍 Validating stream and adding to favorites...")
-
-  try:
-    favorites_manager = get_favorites_manager()
-    result = await favorites_manager.add_favorite(
-      guild_id=interaction.guild.id,
-      url=url,
-      name=name,
-      user_id=interaction.user.id
-    )
-
-    if result['success']:
-      await interaction.edit_original_response(
-        content=f"✅ Added **{result['station_name']}** as favorite #{result['favorite_number']}"
-      )
-    else:
-      await interaction.edit_original_response(
-        content=f"❌ Failed to add favorite: {result['error']}"
-      )
-
-  except Exception as e:
-    logger.error(f"Error in set_favorite command: {e}")
-    await interaction.edit_original_response(
-      content="❌ An unexpected error occurred while adding the favorite."
-    )
-
-@bot.tree.command(
-    name='play-favorite',
-    description="Play a favorite radio station by number"
-)
-@discord.app_commands.checks.cooldown(rate=1, per=5)
-async def play_favorite(interaction: discord.Interaction, number: int):
-  try:
-    favorites_manager = get_favorites_manager()
-    favorite = favorites_manager.get_favorite_by_number(interaction.guild.id, number)
-
-    if not favorite:
-      await interaction.response.send_message(f"❌ Favorite #{number} not found.", ephemeral=True)
-      return
-
-    await interaction.response.send_message(
-      f"🎵 Starting favorite #{number}: **{favorite['station_name']}**"
-    )
-    await play_stream(interaction, favorite['stream_url'])
-
-  except Exception as e:
-    logger.error(f"Error in play_favorite command: {e}")
-    if interaction.response.is_done():
-      await interaction.followup.send("❌ An error occurred while playing the favorite.", ephemeral=True)
-    else:
-      await interaction.response.send_message("❌ An error occurred while playing the favorite.", ephemeral=True)
-
-@bot.tree.command(
-    name='favorites',
-    description="Show favorites with clickable buttons"
-)
-@discord.app_commands.checks.cooldown(rate=1, per=10)
-async def favorites(interaction: discord.Interaction):
-  try:
-    favorites_manager = get_favorites_manager()
-    favorites_list = favorites_manager.get_favorites(interaction.guild.id)
-
-    if not favorites_list:
-      await interaction.response.send_message(
-        "📻 No favorites set for this server yet! Use `/set-favorite` to add some.",
-        ephemeral=True
-      )
-      return
-
-    # Create embed and view with buttons
-    embed = create_favorites_embed(favorites_list, 0, interaction.guild.name)
-    view = FavoritesView(favorites_list, 0)
-
-    await interaction.response.send_message(embed=embed, view=view)
-
-  except Exception as e:
-    logger.error(f"Error in favorites command: {e}")
-    await interaction.response.send_message("❌ An error occurred while loading favorites.", ephemeral=True)
+    await interaction.response.send_message(content="Failed to add favorite", ephemeral=True)
 
 @bot.tree.command(
     name='list-favorites',
-    description="List all favorites (text only, mobile-friendly)"
+    description="List my favorited radio stations"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@bot_not_in_maintenance()
 async def list_favorites(interaction: discord.Interaction):
-  try:
-    favorites_manager = get_favorites_manager()
-    favorites_list = favorites_manager.get_favorites(interaction.guild.id)
+  favorites = await PERSONAL_FAVORITES_MANAGER.retrieve_user_favorites(user_id=interaction.user.id)
+  logger.debug('[%s] %s\'s favorites are: %s', interaction.guild_id, interaction.user.name, favorites)
+  embed_data = {
+    'title': "📻 Your favorites",
+    'color': 0x0099ff,
+    'description': "",
+    # 'timestamp': str(datetime.datetime.now(datetime.UTC)),
+  }
 
-    embed = create_favorites_list_embed(favorites_list, interaction.guild.name)
-    await interaction.response.send_message(embed=embed)
+  if not favorites:
+    embed_data['description'] = '`No Favorites`'
+  for i,(fav, *_) in enumerate(favorites):
 
-  except Exception as e:
-    logger.error(f"Error in list_favorites command: {e}")
-    await interaction.response.send_message("❌ An error occurred while listing favorites.", ephemeral=True)
-
-@bot.tree.command(
-    name='remove-favorite',
-    description="Remove a favorite radio station"
-)
-@discord.app_commands.checks.cooldown(rate=1, per=5)
-async def remove_favorite(interaction: discord.Interaction, number: int):
-  # Check permissions
-  perm_manager = get_permission_manager()
-  if not perm_manager.can_remove_favorites(interaction.guild.id, interaction.user):
-    await interaction.response.send_message(
-      "❌ You don't have permission to remove favorites. Ask an admin to assign you the appropriate role.",
-      ephemeral=True
-    )
-    return
-
-  try:
-    favorites_manager = get_favorites_manager()
-
-    # Check if favorite exists first
-    favorite = favorites_manager.get_favorite_by_number(interaction.guild.id, number)
-    if not favorite:
-      await interaction.response.send_message(f"❌ Favorite #{number} not found.", ephemeral=True)
-      return
-
-    # Create confirmation view
-    view = ConfirmationView("remove", f"favorite #{number}: {favorite['station_name']}")
-    await interaction.response.send_message(
-      f"⚠️ Are you sure you want to remove favorite #{number}: **{favorite['station_name']}**?\n"
-      f"This will reorder all subsequent favorites.",
-      view=view
-    )
-
-    # Wait for confirmation
-    await view.wait()
-
-    if view.confirmed:
-      result = favorites_manager.remove_favorite(interaction.guild.id, number)
-      if result['success']:
-        await interaction.followup.send(
-          f"✅ Removed **{result['station_name']}** from favorites. Subsequent favorites have been renumbered."
-        )
-      else:
-        await interaction.followup.send(f"❌ Failed to remove favorite: {result['error']}")
-
-  except Exception as e:
-    logger.error(f"Error in remove_favorite command: {e}")
-    if interaction.response.is_done():
-      await interaction.followup.send("❌ An error occurred while removing the favorite.", ephemeral=True)
+    if fav.station_name:
+      embed_data['description'] += f"`{i+1}`:\t[{fav.station_name}]({fav.stream_url})\n"
     else:
-      await interaction.response.send_message("❌ An error occurred while removing the favorite.", ephemeral=True)
+      embed_data['description'] += f"`{i+1}`:\t{url_slicer(fav.stream_url)}\n"
 
-@bot.tree.command(
-    name='setup-roles',
-    description="Configure which Discord roles can manage favorites"
-)
-@discord.app_commands.checks.cooldown(rate=1, per=5)
-async def setup_roles(interaction: discord.Interaction, role: discord.Role = None, permission_level: str = None):
-  # Check permissions
-  perm_manager = get_permission_manager()
-  if not perm_manager.can_manage_roles(interaction.guild.id, interaction.user):
-    await interaction.response.send_message(
-      "❌ You don't have permission to manage role assignments. Ask an admin to assign you the appropriate role.",
-      ephemeral=True
-    )
-    return
+  embed = discord.Embed.from_dict(embed_data)
+  embed.add_field(name="Total:", value=f"`{len(favorites)} Favorites`", inline=True)
+  embed.add_field(name="Add More:", value="`/add-favorite`", inline=True)
+  embed.add_field(name="Play:", value=f"`/play-favorite <number>`", inline=True)
 
-  try:
-    # If no parameters provided, show current setup
-    if not role and not permission_level:
-      role_assignments = perm_manager.get_server_role_assignments(interaction.guild.id)
-      available_roles = perm_manager.get_available_permission_roles()
+  await interaction.response.send_message(embed=embed, ephemeral=False)
 
-      embed = create_role_setup_embed(role_assignments, available_roles, interaction.guild.name)
-      await interaction.response.send_message(embed=embed)
-      return
+# @bot.tree.command(
+#     name='set-favorite',
+#     description="Add a radio station to this server's favorites"
+# )
+# @discord.app_commands.checks.cooldown(rate=1, per=5)
+# async def set_favorite(interaction: discord.Interaction, url: str, name: str = None):
+#   # Check permissions
+#   perm_manager = get_permission_manager()
+#   if not perm_manager.can_set_favorites(interaction.guild.id, interaction.user):
+#     await interaction.response.send_message(
+#       "❌ You don't have permission to set favorites. Ask an admin to assign you the appropriate role.",
+#       ephemeral=True
+#     )
+#     return
 
-    # Both parameters required for assignment
-    if not role or not permission_level:
-      await interaction.response.send_message(
-        "❌ Please provide both a role and permission level.\n"
-        "Example: `/setup-roles @DJ dj`\n"
-        "Available levels: user, dj, radio manager, admin",
-        ephemeral=True
-      )
-      return
+#   # Validate URL format first
+#   if not is_valid_url(url):
+#     await interaction.response.send_message("❌ Please provide a valid URL.", ephemeral=True)
+#     return
 
-    # Validate permission level
-    available_roles = perm_manager.get_available_permission_roles()
-    valid_levels = [r['role_name'] for r in available_roles]
+#   await interaction.response.send_message("🔍 Validating stream and adding to favorites...")
 
-    if permission_level.lower() not in valid_levels:
-      await interaction.response.send_message(
-        f"❌ Invalid permission level. Available levels: {', '.join(valid_levels)}",
-        ephemeral=True
-      )
-      return
+#   try:
+#     favorites_manager = get_favorites_manager()
+#     result = await favorites_manager.add_favorite(
+#       guild_id=interaction.guild.id,
+#       url=url,
+#       name=name,
+#       user_id=interaction.user.id
+#     )
 
-    # Assign the role
-    success = perm_manager.assign_role_permission(
-      guild_id=interaction.guild.id,
-      role_id=role.id,
-      role_name=permission_level.lower()
-    )
+#     if result['success']:
+#       await interaction.edit_original_response(
+#         content=f"✅ Added **{result['station_name']}** as favorite #{result['favorite_number']}"
+#       )
+#     else:
+#       await interaction.edit_original_response(
+#         content=f"❌ Failed to add favorite: {result['error']}"
+#       )
 
-    if success:
-      await interaction.response.send_message(
-        f"✅ Assigned role {role.mention} to permission level **{permission_level}**"
-      )
-    else:
-      await interaction.response.send_message(
-        "❌ Failed to assign role permission. Please check the permission level is valid.",
-        ephemeral=True
-      )
+#   except Exception as e:
+#     logger.error(f"Error in set_favorite command: {e}")
+#     await interaction.edit_original_response(
+#       content="❌ An unexpected error occurred while adding the favorite."
+#     )
 
-  except Exception as e:
-    logger.error(f"Error in setup_roles command: {e}")
-    if interaction.response.is_done():
-      await interaction.followup.send("❌ An error occurred while setting up roles.", ephemeral=True)
-    else:
-      await interaction.response.send_message("❌ An error occurred while setting up roles.", ephemeral=True)
+# @bot.tree.command(
+#     name='play-favorite',
+#     description="Play a favorite radio station by number"
+# )
+# @discord.app_commands.checks.cooldown(rate=1, per=5)
+# async def play_favorite(interaction: discord.Interaction, number: int):
+#   try:
+#     favorites_manager = get_favorites_manager()
+#     favorite = favorites_manager.get_favorite_by_number(interaction.guild.id, number)
+
+#     if not favorite:
+#       await interaction.response.send_message(f"❌ Favorite #{number} not found.", ephemeral=True)
+#       return
+
+#     await interaction.response.send_message(
+#       f"🎵 Starting favorite #{number}: **{favorite['station_name']}**"
+#     )
+#     await play_stream(interaction, favorite['stream_url'])
+
+#   except Exception as e:
+#     logger.error(f"Error in play_favorite command: {e}")
+#     if interaction.response.is_done():
+#       await interaction.followup.send("❌ An error occurred while playing the favorite.", ephemeral=True)
+#     else:
+#       await interaction.response.send_message("❌ An error occurred while playing the favorite.", ephemeral=True)
+
+# @bot.tree.command(
+#     name='favorites',
+#     description="Show favorites with clickable buttons"
+# )
+# @discord.app_commands.checks.cooldown(rate=1, per=10)
+# async def favorites(interaction: discord.Interaction):
+#   try:
+#     favorites_manager = get_favorites_manager()
+#     favorites_list = favorites_manager.get_favorites(interaction.guild.id)
+
+#     if not favorites_list:
+#       await interaction.response.send_message(
+#         "📻 No favorites set for this server yet! Use `/set-favorite` to add some.",
+#         ephemeral=True
+#       )
+#       return
+
+#     # Create embed and view with buttons
+#     embed = create_favorites_embed(favorites_list, 0, interaction.guild.name)
+#     view = FavoritesView(favorites_list, 0)
+
+#     await interaction.response.send_message(embed=embed, view=view)
+
+#   except Exception as e:
+#     logger.error(f"Error in favorites command: {e}")
+#     await interaction.response.send_message("❌ An error occurred while loading favorites.", ephemeral=True)
+
+# @bot.tree.command(
+#     name='list-favorites',
+#     description="List all favorites (text only, mobile-friendly)"
+# )
+# @discord.app_commands.checks.cooldown(rate=1, per=5)
+# async def list_favorites(interaction: discord.Interaction):
+#   try:
+#     favorites_manager = get_favorites_manager()
+#     favorites_list = favorites_manager.get_favorites(interaction.guild.id)
+
+#     embed = create_favorites_list_embed(favorites_list, interaction.guild.name)
+#     await interaction.response.send_message(embed=embed)
+
+#   except Exception as e:
+#     logger.error(f"Error in list_favorites command: {e}")
+#     await interaction.response.send_message("❌ An error occurred while listing favorites.", ephemeral=True)
+
+# @bot.tree.command(
+#     name='remove-favorite',
+#     description="Remove a favorite radio station"
+# )
+# @discord.app_commands.checks.cooldown(rate=1, per=5)
+# async def remove_favorite(interaction: discord.Interaction, number: int):
+#   # Check permissions
+#   perm_manager = get_permission_manager()
+#   if not perm_manager.can_remove_favorites(interaction.guild.id, interaction.user):
+#     await interaction.response.send_message(
+#       "❌ You don't have permission to remove favorites. Ask an admin to assign you the appropriate role.",
+#       ephemeral=True
+#     )
+#     return
+
+#   try:
+#     favorites_manager = get_favorites_manager()
+
+#     # Check if favorite exists first
+#     favorite = favorites_manager.get_favorite_by_number(interaction.guild.id, number)
+#     if not favorite:
+#       await interaction.response.send_message(f"❌ Favorite #{number} not found.", ephemeral=True)
+#       return
+
+#     # Create confirmation view
+#     view = ConfirmationView("remove", f"favorite #{number}: {favorite['station_name']}")
+#     await interaction.response.send_message(
+#       f"⚠️ Are you sure you want to remove favorite #{number}: **{favorite['station_name']}**?\n"
+#       f"This will reorder all subsequent favorites.",
+#       view=view
+#     )
+
+#     # Wait for confirmation
+#     await view.wait()
+
+#     if view.confirmed:
+#       result = favorites_manager.remove_favorite(interaction.guild.id, number)
+#       if result['success']:
+#         await interaction.followup.send(
+#           f"✅ Removed **{result['station_name']}** from favorites. Subsequent favorites have been renumbered."
+#         )
+#       else:
+#         await interaction.followup.send(f"❌ Failed to remove favorite: {result['error']}")
+
+#   except Exception as e:
+#     logger.error(f"Error in remove_favorite command: {e}")
+#     if interaction.response.is_done():
+#       await interaction.followup.send("❌ An error occurred while removing the favorite.", ephemeral=True)
+#     else:
+#       await interaction.response.send_message("❌ An error occurred while removing the favorite.", ephemeral=True)
+
+# @bot.tree.command(
+#     name='setup-roles',
+#     description="Configure which Discord roles can manage favorites"
+# )
+# @discord.app_commands.checks.cooldown(rate=1, per=5)
+# async def setup_roles(interaction: discord.Interaction, role: discord.Role = None, permission_level: str = None):
+#   # Check permissions
+#   perm_manager = get_permission_manager()
+#   if not perm_manager.can_manage_roles(interaction.guild.id, interaction.user):
+#     await interaction.response.send_message(
+#       "❌ You don't have permission to manage role assignments. Ask an admin to assign you the appropriate role.",
+#       ephemeral=True
+#     )
+#     return
+
+#   try:
+#     # If no parameters provided, show current setup
+#     if not role and not permission_level:
+#       role_assignments = perm_manager.get_server_role_assignments(interaction.guild.id)
+#       available_roles = perm_manager.get_available_permission_roles()
+
+#       embed = create_role_setup_embed(role_assignments, available_roles, interaction.guild.name)
+#       await interaction.response.send_message(embed=embed)
+#       return
+
+#     # Both parameters required for assignment
+#     if not role or not permission_level:
+#       await interaction.response.send_message(
+#         "❌ Please provide both a role and permission level.\n"
+#         "Example: `/setup-roles @DJ dj`\n"
+#         "Available levels: user, dj, radio manager, admin",
+#         ephemeral=True
+#       )
+#       return
+
+#     # Validate permission level
+#     available_roles = perm_manager.get_available_permission_roles()
+#     valid_levels = [r['role_name'] for r in available_roles]
+
+#     if permission_level.lower() not in valid_levels:
+#       await interaction.response.send_message(
+#         f"❌ Invalid permission level. Available levels: {', '.join(valid_levels)}",
+#         ephemeral=True
+#       )
+#       return
+
+#     # Assign the role
+#     success = perm_manager.assign_role_permission(
+#       guild_id=interaction.guild.id,
+#       role_id=role.id,
+#       role_name=permission_level.lower()
+#     )
+
+#     if success:
+#       await interaction.response.send_message(
+#         f"✅ Assigned role {role.mention} to permission level **{permission_level}**"
+#       )
+#     else:
+#       await interaction.response.send_message(
+#         "❌ Failed to assign role permission. Please check the permission level is valid.",
+#         ephemeral=True
+#       )
+
+#   except Exception as e:
+#     logger.error(f"Error in setup_roles command: {e}")
+#     if interaction.response.is_done():
+#       await interaction.followup.send("❌ An error occurred while setting up roles.", ephemeral=True)
+#     else:
+#       await interaction.response.send_message("❌ An error occurred while setting up roles.", ephemeral=True)
 
 ### END FAVORITES COMMANDS ###
 
