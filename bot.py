@@ -683,7 +683,7 @@ def url_slicer(url: str, max_display: int = 10) -> str:
   sliced_url = urllib.parse.urlparse(url)
   url_raw = str(url)
   path_raw = sliced_url.path.rstrip('/')
-  sliced_url = sliced_url.hostname
+  hostname = sliced_url.hostname
   port = sliced_url.port
   # Slice the path if necessary
   if len(path_raw) <= max_display:
@@ -694,9 +694,9 @@ def url_slicer(url: str, max_display: int = 10) -> str:
   # If port is present and is not the default HTTP/HTTPS port, include it
   try:
     if port and int(port) not in (80, 443):
-      display = f"{sliced_url}:{port}{path}"
+      display = f"{hostname}:{port}{path}"
     else:
-      display = f"{sliced_url}{path}"
+      display = f"{hostname}{path}"
   except Exception:
     logger.warning(f"an unexpected error occurred while slicing port: {url}")
     display = "Error-slicing-URL"
