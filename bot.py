@@ -11,6 +11,7 @@ import psutil
 from services.health_monitor import HealthMonitor
 from services.metadata_monitor import MetadataMonitor
 from services.state_manager import StateManager
+from services.personal_favorites_manager import PersonalFavoritesManager
 from pls_parser import parse_pls
 import shout_errors
 import urllib_hack
@@ -89,7 +90,8 @@ logger.addHandler(file_handler)
 _active_heartbeats = {}
 
 # TODO: Clean this up?
-STATE_MANAGER = None
+STATE_MANAGER: StateManager = None
+PERSONAL_FAVORITES_MANAGER: PersonalFavoritesManager = None
 MONITORS = []
 
 async def init():
@@ -97,6 +99,8 @@ async def init():
   # Create State Manager to manage the state
   global STATE_MANAGER
   STATE_MANAGER = await StateManager.create_state_manager(bot=bot)
+  global PERSONAL_FAVORITES_MANAGER
+  PERSONAL_FAVORITES_MANAGER = PersonalFavoritesManager(logger=logger)
   # Create list of monitors
   global MONITORS
   MONITORS = [
@@ -370,10 +374,24 @@ async def maint(interaction: discord.Interaction, status: bool = True):
       await interaction.response.send_message("Awww look at you, how cute")
 
 ### FAVORITES COMMANDS ###
+@bot.tree.command(
+    name='add-favorite',
+    description="Add a radio station to my favorites"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5)
+@bot_not_in_maintenance()
+async def add_favorite(interaction: discord.Interaction, url: str, station_name: str = None):
+  logger.debug("[%s] Attempting to add %s to %s favorites", interaction.guild_id, url, interaction.user.name)
+  if await PERSONAL_FAVORITES_MANAGER.create_user_favorite(interaction.user.id, stream_url=url, station_name=station_name):
+    logger.debug("[%s] Add success", interaction.guild_id)
+    await interaction.response.send_message(content="Favorite added!", ephemeral=False)
+  else:
+    logger.debug("[%s] Add failed", interaction.guild_id)
+    await interaction.response.send_message(content="Failed to add favorite", ephemeral=False)
 
 @bot.tree.command(
     name='set-favorite',
-    description="Add a radio station to favorites"
+    description="Add a radio station to this server's favorites"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 async def set_favorite(interaction: discord.Interaction, url: str, name: str = None):

@@ -1,4 +1,5 @@
-from datetime import datetime
+from ast import In
+import datetime
 from sqlalchemy import String, Integer, DateTime, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -34,8 +35,8 @@ class GuildState(Base):
   current_stream_url: Mapped[str] = mapped_column(String, nullable=True)
   private_stream: Mapped[bool] = mapped_column(Boolean, nullable=True)
   text_channel_id: Mapped[int] = mapped_column(Integer, nullable=True)
-  start_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
-  last_active_user_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+  start_time: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
+  last_active_user_time: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)
   cleaning_up: Mapped[bool] = mapped_column(Boolean, nullable=True)
   is_active: Mapped[bool] = mapped_column(Boolean, nullable=True)
   was_active: Mapped[bool] = mapped_column(Boolean, nullable=True)
@@ -47,3 +48,12 @@ class BotState(Base):
 
   id: Mapped[int] = mapped_column(primary_key=True)
   maint: Mapped[bool] = mapped_column(Boolean)
+
+class PersonalFavorite(Base):
+  __tablename__ = "personal_favorite"
+
+  id: Mapped[int] = mapped_column(primary_key=True)
+  user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+  stream_url: Mapped[str] = mapped_column(String, nullable=False)
+  station_name: Mapped[str] = mapped_column(String, nullable=True)
+  creation_date: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, default=datetime.datetime.now(datetime.UTC))
