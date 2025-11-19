@@ -145,14 +145,14 @@ def is_channel():
 
     if is_thread:
       try:
-        await interaction.response.send_message("⚠️ I can't process commands *properly* in message threads, use a `text-channel` or `voice-text-channel` instead.", ephemeral=True)
+        await interaction.response.send_message("⚠️ I can't process commands *properly* in message threads, use a `text-channel` (or `voice-text-channel`) instead.", ephemeral=True)
         logger.error(f"{interaction.user} attempted to use a command in a thread")
       except Exception as e:
         logger.warning(f"Failed to send thread rejection message: {e}")
       return False
     if is_dm:
       try:
-        await interaction.response.send_message("⚠️ I can't process commands *directly*, invite me to a server and use a `text-channel` instead.")
+        await interaction.response.send_message("⚠️ I can't process commands *directly*, add me to a server and use a `text-channel` instead.")
         logger.error(f"{interaction.user} attempted to use a command in a DM")
       except Exception as e:
         logger.warning(f"Failed to send DM rejection message: {e}")
