@@ -117,7 +117,50 @@ async def on_ready():
   logger.info(f"Shard IDS: {bot.shard_ids}")
   logger.info(f"Cluster ID: {bot.cluster_id}")
 
+
 ### Custom Checks ###
+
+## Make sure initiating channel is not a thread channel
+def is_channel():
+  """
+  Custom check to prevent commands from being used in unsupported channels.
+
+  Usage:
+    @is_channel()
+    async def command(...):
+  Returns:
+    Boolean: True if the command is used in a normal text channel, False otherwise
+  """
+
+  async def _predicate(interaction: discord.Interaction):
+    ch = getattr(interaction, 'channel', None)
+    # Detect thread channels
+    is_thread = isinstance(ch, discord.Thread) or getattr(ch, 'type', None) in (
+      discord.ChannelType.public_thread,
+      discord.ChannelType.private_thread,
+      discord.ChannelType.news_thread,
+    )
+    # Detect direct messages (DMs)
+    is_dm = isinstance(ch, discord.DMChannel) or getattr(ch, 'type', None) == discord.ChannelType.private
+
+    if is_thread:
+      try:
+        await interaction.response.send_message("⚠️ I can't process commands *properly* in message threads, use a `text-channel` or `voice-text-channel` instead.", ephemeral=True)
+        logger.error(f"{interaction.user} attempted to use a command in a thread")
+      except Exception as e:
+        logger.warning(f"Failed to send thread rejection message: {e}")
+      return False
+    if is_dm:
+      try:
+        await interaction.response.send_message("⚠️ I can't process commands *directly*, invite me to a server and use a `text-channel` instead.")
+        logger.error(f"{interaction.user} attempted to use a command in a DM")
+      except Exception as e:
+        logger.warning(f"Failed to send DM rejection message: {e}")
+      return False
+    return True
+
+  return discord.app_commands.check(_predicate)
+
 
 # Verify bot permissions in the initiating channel
 def bot_has_channel_permissions(permissions: discord.Permissions):
@@ -134,6 +177,7 @@ def bot_has_channel_permissions(permissions: discord.Permissions):
         raise discord.app_commands.BotMissingPermissions(missing_permissions=missing_permissions)
     return discord.app_commands.checks.check(predicate)
 
+# Verify bot is not in maintenance mode
 def bot_not_in_maintenance():
   async def predicate(interaction: discord.Interaction):
     if STATE_MANAGER.get_maint() and not await bot.is_owner(interaction.user):
@@ -142,11 +186,14 @@ def bot_not_in_maintenance():
     return True
   return discord.app_commands.checks.check(predicate)
 
+### Bot Commands ###
+
 @bot.tree.command(
     name='play',
     description="Begin playback of a shoutcast/icecast stream"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 @bot_not_in_maintenance()
 async def play(interaction: discord.Interaction, url: str, private_stream: bool = False):
@@ -165,6 +212,7 @@ async def play(interaction: discord.Interaction, url: str, private_stream: bool 
     description="Remove the bot from the current call"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 @bot_not_in_maintenance()
 async def leave(interaction: discord.Interaction, force: bool = False):
   voice_client = interaction.guild.voice_client
@@ -201,6 +249,7 @@ async def leave(interaction: discord.Interaction, force: bool = False):
     description="Send an embed with the current song information to this channel"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def song(interaction: discord.Interaction):
   url = STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url')
   if url:
@@ -218,6 +267,7 @@ async def song(interaction: discord.Interaction):
     description="Refresh the stream. Bot will leave and come back. Song updates will start displaying in this channel"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 @bot_not_in_maintenance()
 async def refresh(interaction: discord.Interaction):
@@ -232,6 +282,7 @@ async def refresh(interaction: discord.Interaction):
     description="Information on how to get support"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def support(interaction: discord.Interaction):
   embed_data = {
     'title': "BunBot Support",
@@ -264,6 +315,7 @@ async def support(interaction: discord.Interaction):
     description="Show debug stats & info"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def debug(interaction: discord.Interaction, page: int = 0, per_page: int = 10, id: str = ''):
   resp = []
   resp.append("==\tGlobal Info\t==")
@@ -316,6 +368,7 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
     description="Toggle maintenance mode! (Bot maintainer only)"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 async def maint(interaction: discord.Interaction, status: bool = True):
     if await bot.is_owner(interaction.user):
@@ -376,6 +429,7 @@ async def maint(interaction: discord.Interaction, status: bool = True):
     description="Add a radio station to favorites"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def set_favorite(interaction: discord.Interaction, url: str, name: str = None):
   # Check permissions
   perm_manager = get_permission_manager()
@@ -422,6 +476,7 @@ async def set_favorite(interaction: discord.Interaction, url: str, name: str = N
     description="Play a favorite radio station by number"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def play_favorite(interaction: discord.Interaction, number: int):
   try:
     favorites_manager = get_favorites_manager()
@@ -448,6 +503,7 @@ async def play_favorite(interaction: discord.Interaction, number: int):
     description="Show favorites with clickable buttons"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=10)
+@is_channel()
 async def favorites(interaction: discord.Interaction):
   try:
     favorites_manager = get_favorites_manager()
@@ -475,6 +531,7 @@ async def favorites(interaction: discord.Interaction):
     description="List all favorites (text only, mobile-friendly)"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def list_favorites(interaction: discord.Interaction):
   try:
     favorites_manager = get_favorites_manager()
@@ -492,6 +549,7 @@ async def list_favorites(interaction: discord.Interaction):
     description="Remove a favorite radio station"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def remove_favorite(interaction: discord.Interaction, number: int):
   # Check permissions
   perm_manager = get_permission_manager()
@@ -543,6 +601,7 @@ async def remove_favorite(interaction: discord.Interaction, number: int):
     description="Configure which Discord roles can manage favorites"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def setup_roles(interaction: discord.Interaction, role: discord.Role = None, permission_level: str = None):
   # Check permissions
   perm_manager = get_permission_manager()
