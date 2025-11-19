@@ -192,7 +192,7 @@ def bot_not_in_maintenance():
     name='play',
     description="Begin playback of a shoutcast/icecast stream"
 )
-@discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.cooldown(rate=1, per=5, key=None)
 @is_channel()
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 @bot_not_in_maintenance()
@@ -211,7 +211,7 @@ async def play(interaction: discord.Interaction, url: str, private_stream: bool 
     name='leave',
     description="Remove the bot from the current call"
 )
-@discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.cooldown(rate=1, per=5, key=None)
 @is_channel()
 @bot_not_in_maintenance()
 async def leave(interaction: discord.Interaction, force: bool = False):
@@ -266,7 +266,7 @@ async def song(interaction: discord.Interaction):
     name="refresh",
     description="Refresh the stream. Bot will leave and come back. Song updates will start displaying in this channel"
 )
-@discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.cooldown(rate=1, per=5, key=None)
 @is_channel()
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 @bot_not_in_maintenance()
@@ -367,7 +367,7 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
     name='maint',
     description="Toggle maintenance mode! (Bot maintainer only)"
 )
-@discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.cooldown(rate=1, per=5, key=None)
 @is_channel()
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 async def maint(interaction: discord.Interaction, status: bool = True):
