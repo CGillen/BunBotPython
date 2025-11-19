@@ -970,13 +970,12 @@ async def play_stream(interaction, url):
       return False
 
   # TRY to Pipe music stream to FFMpeg:
-
-  # We love adhering to SHOUTcast recommended buffer sizes arounder here! yay!
-  #                  MARKER BYTES REQUIRED FOR PROPER SYNC!
-  # 4080 bytes per tick * 8 chunks = 32640 + 8 marker bytes = 32648 bits buffer (8 chunks)
-  # 4080 bytes per tick * 4 Chunks = 16320 + 4 marker bytes = 16324 bits per analysis (4 chunks)
+  ## Opus trancoding with loudnorm (12dB LRA)
+  ## Buffer size: 15Mb
+  ## Analyze Duration: 5 seconds
+  ## Allowed Protocols: http,https,tls,pipe
   try:
-    music_stream = discord.FFmpegOpusAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0 -protocol_whitelist http,https,tls,pipe")
+    music_stream = discord.FFmpegOpusAudio(source=url, options="-rtbufsize 15M -analyzeduration 5000000 -filter:a loudnorm=I=-30:LRA=12:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0 -protocol_whitelist http,https,tls,pipe")
     await asyncio.sleep(1)  # Give FFmpeg a moment to start
   except Exception as e:
     logger.error(f"Failed to start FFmpeg stream: {e}")
