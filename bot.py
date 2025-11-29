@@ -121,7 +121,50 @@ async def on_ready():
   logger.info(f"Shard IDS: {bot.shard_ids}")
   logger.info(f"Cluster ID: {bot.cluster_id}")
 
+
 ### Custom Checks ###
+
+## Make sure initiating channel is not a thread channel
+def is_channel():
+  """
+  Custom check to prevent commands from being used in unsupported channels.
+
+  Usage:
+    @is_channel()
+    async def command(...):
+  Returns:
+    Boolean: True if the command is used in a normal text channel, False otherwise
+  """
+
+  async def _predicate(interaction: discord.Interaction):
+    ch = getattr(interaction, 'channel', None)
+    # Detect thread channels
+    is_thread = isinstance(ch, discord.Thread) or getattr(ch, 'type', None) in (
+      discord.ChannelType.public_thread,
+      discord.ChannelType.private_thread,
+      discord.ChannelType.news_thread,
+    )
+    # Detect direct messages (DMs)
+    is_dm = isinstance(ch, discord.DMChannel) or getattr(ch, 'type', None) == discord.ChannelType.private
+
+    if is_thread:
+      try:
+        await interaction.response.send_message("⚠️ I can't process commands *properly* in message threads, use a `text-channel` (or `voice-text-channel`) instead.", ephemeral=True)
+        logger.error(f"{interaction.user} attempted to use a command in a thread")
+      except Exception as e:
+        logger.warning(f"Failed to send thread rejection message: {e}")
+      return False
+    if is_dm:
+      try:
+        await interaction.response.send_message("⚠️ I can't process commands *directly*, add me to a server and use a `text-channel` instead.")
+        logger.error(f"{interaction.user} attempted to use a command in a DM")
+      except Exception as e:
+        logger.warning(f"Failed to send DM rejection message: {e}")
+      return False
+    return True
+
+  return discord.app_commands.check(_predicate)
+
 
 # Verify bot permissions in the initiating channel
 def bot_has_channel_permissions(permissions: discord.Permissions):
@@ -138,6 +181,7 @@ def bot_has_channel_permissions(permissions: discord.Permissions):
         raise discord.app_commands.BotMissingPermissions(missing_permissions=missing_permissions)
     return discord.app_commands.checks.check(predicate)
 
+# Verify bot is not in maintenance mode
 def bot_not_in_maintenance():
   async def predicate(interaction: discord.Interaction):
     if STATE_MANAGER.get_maint() and not await bot.is_owner(interaction.user):
@@ -146,11 +190,14 @@ def bot_not_in_maintenance():
     return True
   return discord.app_commands.checks.check(predicate)
 
+### Bot Commands ###
+
 @bot.tree.command(
     name='play',
     description="Begin playback of a shoutcast/icecast stream"
 )
-@discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.cooldown(rate=1, per=5, key=lambda i: i.guild_id)
+@is_channel()
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 @bot_not_in_maintenance()
 async def play(interaction: discord.Interaction, url: str, private_stream: bool = False):
@@ -168,7 +215,8 @@ async def play(interaction: discord.Interaction, url: str, private_stream: bool 
     name='leave',
     description="Remove the bot from the current call"
 )
-@discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.cooldown(rate=1, per=5, key=lambda i: i.guild_id)
+@is_channel()
 @bot_not_in_maintenance()
 async def leave(interaction: discord.Interaction, force: bool = False):
   voice_client = interaction.guild.voice_client
@@ -205,6 +253,7 @@ async def leave(interaction: discord.Interaction, force: bool = False):
     description="Send an embed with the current song information to this channel"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def song(interaction: discord.Interaction):
   url = STATE_MANAGER.get_state(interaction.guild.id, 'current_stream_url')
   if url:
@@ -221,7 +270,8 @@ async def song(interaction: discord.Interaction):
     name="refresh",
     description="Refresh the stream. Bot will leave and come back. Song updates will start displaying in this channel"
 )
-@discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.cooldown(rate=1, per=5, key=lambda i: i.guild_id)
+@is_channel()
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 @bot_not_in_maintenance()
 async def refresh(interaction: discord.Interaction):
@@ -236,6 +286,7 @@ async def refresh(interaction: discord.Interaction):
     description="Information on how to get support"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def support(interaction: discord.Interaction):
   embed_data = {
     'title': "BunBot Support",
@@ -268,6 +319,7 @@ async def support(interaction: discord.Interaction):
     description="Show debug stats & info"
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
+@is_channel()
 async def debug(interaction: discord.Interaction, page: int = 0, per_page: int = 10, id: str = ''):
   resp = []
   resp.append("==\tGlobal Info\t==")
@@ -319,7 +371,8 @@ async def debug(interaction: discord.Interaction, page: int = 0, per_page: int =
     name='maint',
     description="Toggle maintenance mode! (Bot maintainer only)"
 )
-@discord.app_commands.checks.cooldown(rate=1, per=5)
+@discord.app_commands.checks.cooldown(rate=1, per=5, key=lambda i: i.guild_id)
+@is_channel()
 @bot_has_channel_permissions(permissions=discord.Permissions(send_messages=True))
 async def maint(interaction: discord.Interaction, status: bool = True):
     if await bot.is_owner(interaction.user):
@@ -380,6 +433,7 @@ async def maint(interaction: discord.Interaction, status: bool = True):
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_not_in_maintenance()
+@is_channel()
 async def add_favorite(interaction: discord.Interaction, url: str, station_name: str = None):
   logger.debug("[%s] Attempting to add %s to %s favorites", interaction.guild_id, url, interaction.user.name)
   if await PERSONAL_FAVORITES_MANAGER.create_user_favorite(interaction.user.id, stream_url=url, station_name=station_name):
@@ -395,6 +449,7 @@ async def add_favorite(interaction: discord.Interaction, url: str, station_name:
 )
 @discord.app_commands.checks.cooldown(rate=1, per=5)
 @bot_not_in_maintenance()
+@is_channel()
 async def list_favorites(interaction: discord.Interaction):
   favorites = await PERSONAL_FAVORITES_MANAGER.retrieve_user_favorites(user_id=interaction.user.id)
   logger.debug('[%s] %s\'s favorites are: %s', interaction.guild_id, interaction.user.name, favorites)
@@ -421,242 +476,15 @@ async def list_favorites(interaction: discord.Interaction):
 
   await interaction.response.send_message(embed=embed, ephemeral=False)
 
-# @bot.tree.command(
-#     name='set-favorite',
-#     description="Add a radio station to this server's favorites"
-# )
-# @discord.app_commands.checks.cooldown(rate=1, per=5)
-# async def set_favorite(interaction: discord.Interaction, url: str, name: str = None):
-#   # Check permissions
-#   perm_manager = get_permission_manager()
-#   if not perm_manager.can_set_favorites(interaction.guild.id, interaction.user):
-#     await interaction.response.send_message(
-#       "❌ You don't have permission to set favorites. Ask an admin to assign you the appropriate role.",
-#       ephemeral=True
-#     )
-#     return
-
-#   # Validate URL format first
-#   if not is_valid_url(url):
-#     await interaction.response.send_message("❌ Please provide a valid URL.", ephemeral=True)
-#     return
-
-#   await interaction.response.send_message("🔍 Validating stream and adding to favorites...")
-
-#   try:
-#     favorites_manager = get_favorites_manager()
-#     result = await favorites_manager.add_favorite(
-#       guild_id=interaction.guild.id,
-#       url=url,
-#       name=name,
-#       user_id=interaction.user.id
-#     )
-
-#     if result['success']:
-#       await interaction.edit_original_response(
-#         content=f"✅ Added **{result['station_name']}** as favorite #{result['favorite_number']}"
-#       )
-#     else:
-#       await interaction.edit_original_response(
-#         content=f"❌ Failed to add favorite: {result['error']}"
-#       )
-
-#   except Exception as e:
-#     logger.error(f"Error in set_favorite command: {e}")
-#     await interaction.edit_original_response(
-#       content="❌ An unexpected error occurred while adding the favorite."
-#     )
-
-# @bot.tree.command(
-#     name='play-favorite',
-#     description="Play a favorite radio station by number"
-# )
-# @discord.app_commands.checks.cooldown(rate=1, per=5)
-# async def play_favorite(interaction: discord.Interaction, number: int):
-#   try:
-#     favorites_manager = get_favorites_manager()
-#     favorite = favorites_manager.get_favorite_by_number(interaction.guild.id, number)
-
-#     if not favorite:
-#       await interaction.response.send_message(f"❌ Favorite #{number} not found.", ephemeral=True)
-#       return
-
-#     await interaction.response.send_message(
-#       f"🎵 Starting favorite #{number}: **{favorite['station_name']}**"
-#     )
-#     await play_stream(interaction, favorite['stream_url'])
-
-#   except Exception as e:
-#     logger.error(f"Error in play_favorite command: {e}")
-#     if interaction.response.is_done():
-#       await interaction.followup.send("❌ An error occurred while playing the favorite.", ephemeral=True)
-#     else:
-#       await interaction.response.send_message("❌ An error occurred while playing the favorite.", ephemeral=True)
-
-# @bot.tree.command(
-#     name='favorites',
-#     description="Show favorites with clickable buttons"
-# )
-# @discord.app_commands.checks.cooldown(rate=1, per=10)
-# async def favorites(interaction: discord.Interaction):
-#   try:
-#     favorites_manager = get_favorites_manager()
-#     favorites_list = favorites_manager.get_favorites(interaction.guild.id)
-
-#     if not favorites_list:
-#       await interaction.response.send_message(
-#         "📻 No favorites set for this server yet! Use `/set-favorite` to add some.",
-#         ephemeral=True
-#       )
-#       return
-
-#     # Create embed and view with buttons
-#     embed = create_favorites_embed(favorites_list, 0, interaction.guild.name)
-#     view = FavoritesView(favorites_list, 0)
-
-#     await interaction.response.send_message(embed=embed, view=view)
-
-#   except Exception as e:
-#     logger.error(f"Error in favorites command: {e}")
-#     await interaction.response.send_message("❌ An error occurred while loading favorites.", ephemeral=True)
-
-# @bot.tree.command(
-#     name='list-favorites',
-#     description="List all favorites (text only, mobile-friendly)"
-# )
-# @discord.app_commands.checks.cooldown(rate=1, per=5)
-# async def list_favorites(interaction: discord.Interaction):
-#   try:
-#     favorites_manager = get_favorites_manager()
-#     favorites_list = favorites_manager.get_favorites(interaction.guild.id)
-
-#     embed = create_favorites_list_embed(favorites_list, interaction.guild.name)
-#     await interaction.response.send_message(embed=embed)
-
-#   except Exception as e:
-#     logger.error(f"Error in list_favorites command: {e}")
-#     await interaction.response.send_message("❌ An error occurred while listing favorites.", ephemeral=True)
-
-# @bot.tree.command(
-#     name='remove-favorite',
-#     description="Remove a favorite radio station"
-# )
-# @discord.app_commands.checks.cooldown(rate=1, per=5)
-# async def remove_favorite(interaction: discord.Interaction, number: int):
-#   # Check permissions
-#   perm_manager = get_permission_manager()
-#   if not perm_manager.can_remove_favorites(interaction.guild.id, interaction.user):
-#     await interaction.response.send_message(
-#       "❌ You don't have permission to remove favorites. Ask an admin to assign you the appropriate role.",
-#       ephemeral=True
-#     )
-#     return
-
-#   try:
-#     favorites_manager = get_favorites_manager()
-
-#     # Check if favorite exists first
-#     favorite = favorites_manager.get_favorite_by_number(interaction.guild.id, number)
-#     if not favorite:
-#       await interaction.response.send_message(f"❌ Favorite #{number} not found.", ephemeral=True)
-#       return
-
-#     # Create confirmation view
-#     view = ConfirmationView("remove", f"favorite #{number}: {favorite['station_name']}")
-#     await interaction.response.send_message(
-#       f"⚠️ Are you sure you want to remove favorite #{number}: **{favorite['station_name']}**?\n"
-#       f"This will reorder all subsequent favorites.",
-#       view=view
-#     )
-
-#     # Wait for confirmation
-#     await view.wait()
-
-#     if view.confirmed:
-#       result = favorites_manager.remove_favorite(interaction.guild.id, number)
-#       if result['success']:
-#         await interaction.followup.send(
-#           f"✅ Removed **{result['station_name']}** from favorites. Subsequent favorites have been renumbered."
-#         )
-#       else:
-#         await interaction.followup.send(f"❌ Failed to remove favorite: {result['error']}")
-
-#   except Exception as e:
-#     logger.error(f"Error in remove_favorite command: {e}")
-#     if interaction.response.is_done():
-#       await interaction.followup.send("❌ An error occurred while removing the favorite.", ephemeral=True)
-#     else:
-#       await interaction.response.send_message("❌ An error occurred while removing the favorite.", ephemeral=True)
-
-# @bot.tree.command(
-#     name='setup-roles',
-#     description="Configure which Discord roles can manage favorites"
-# )
-# @discord.app_commands.checks.cooldown(rate=1, per=5)
-# async def setup_roles(interaction: discord.Interaction, role: discord.Role = None, permission_level: str = None):
-#   # Check permissions
-#   perm_manager = get_permission_manager()
-#   if not perm_manager.can_manage_roles(interaction.guild.id, interaction.user):
-#     await interaction.response.send_message(
-#       "❌ You don't have permission to manage role assignments. Ask an admin to assign you the appropriate role.",
-#       ephemeral=True
-#     )
-#     return
-
-#   try:
-#     # If no parameters provided, show current setup
-#     if not role and not permission_level:
-#       role_assignments = perm_manager.get_server_role_assignments(interaction.guild.id)
-#       available_roles = perm_manager.get_available_permission_roles()
-
-#       embed = create_role_setup_embed(role_assignments, available_roles, interaction.guild.name)
-#       await interaction.response.send_message(embed=embed)
-#       return
-
-#     # Both parameters required for assignment
-#     if not role or not permission_level:
-#       await interaction.response.send_message(
-#         "❌ Please provide both a role and permission level.\n"
-#         "Example: `/setup-roles @DJ dj`\n"
-#         "Available levels: user, dj, radio manager, admin",
-#         ephemeral=True
-#       )
-#       return
-
-#     # Validate permission level
-#     available_roles = perm_manager.get_available_permission_roles()
-#     valid_levels = [r['role_name'] for r in available_roles]
-
-#     if permission_level.lower() not in valid_levels:
-#       await interaction.response.send_message(
-#         f"❌ Invalid permission level. Available levels: {', '.join(valid_levels)}",
-#         ephemeral=True
-#       )
-#       return
-
-#     # Assign the role
-#     success = perm_manager.assign_role_permission(
-#       guild_id=interaction.guild.id,
-#       role_id=role.id,
-#       role_name=permission_level.lower()
-#     )
-
-#     if success:
-#       await interaction.response.send_message(
-#         f"✅ Assigned role {role.mention} to permission level **{permission_level}**"
-#       )
-#     else:
-#       await interaction.response.send_message(
-#         "❌ Failed to assign role permission. Please check the permission level is valid.",
-#         ephemeral=True
-#       )
-
-#   except Exception as e:
-#     logger.error(f"Error in setup_roles command: {e}")
-#     if interaction.response.is_done():
-#       await interaction.followup.send("❌ An error occurred while setting up roles.", ephemeral=True)
-#     else:
-#       await interaction.response.send_message("❌ An error occurred while setting up roles.", ephemeral=True)
+@bot.tree.command(
+    name='play-favorite',
+    description="Play one of my favorited radio stations"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5, key=lambda i: i.guild_id)
+@bot_not_in_maintenance()
+@is_channel()
+async def play_favorite(interaction: discord.Interaction):
+  pass
 
 ### END FAVORITES COMMANDS ###
 
@@ -733,7 +561,7 @@ def url_slicer(url: str, max_display: int = 10) -> str:
   sliced_url = urllib.parse.urlparse(url)
   url_raw = str(url)
   path_raw = sliced_url.path.rstrip('/')
-  sliced_url = sliced_url.hostname
+  hostname = sliced_url.hostname
   port = sliced_url.port
   # Slice the path if necessary
   if len(path_raw) <= max_display:
@@ -744,9 +572,9 @@ def url_slicer(url: str, max_display: int = 10) -> str:
   # If port is present and is not the default HTTP/HTTPS port, include it
   try:
     if port and int(port) not in (80, 443):
-      display = f"{sliced_url}:{port}{path}"
+      display = f"{hostname}:{port}{path}"
     else:
-      display = f"{sliced_url}{path}"
+      display = f"{hostname}{path}"
   except Exception:
     logger.warning(f"an unexpected error occurred while slicing port: {url}")
     display = "Error-slicing-URL"
@@ -939,7 +767,7 @@ async def play_stream(interaction, url):
 
   # Try to get an http stream connection to the ... stream
   try:
-    resp = urllib.request.urlopen(url, timeout=10)
+    urllib.request.urlopen(url, timeout=10)
   except Exception as error: # if there is an error, let the user know.
     logger.error(f"Failed to connect to stream: {error}")
     await interaction.edit_original_response(content="Error fetching stream. Maybe the stream is down?")
@@ -948,21 +776,25 @@ async def play_stream(interaction, url):
   # Try to connect to voice chat, and only consider connected if both conditions met
   if not voice_client or not voice_client.is_connected():
     try:
-      voice_client = await voice_channel.connect()
+      voice_client = await voice_channel.connect(timeout=7)
       logger.info("Connected to voice channel for playback")
     except Exception as e:
       logger.error(f"Failed to connect to voice channel: {e}")
-      await interaction.edit_original_response(content="Failed to connect to voice channel. Please try again.")
+      max_users = voice_channel.user_limit
+      user_count = len(voice_channel.members)
+      if user_count >= max_users:
+        await interaction.edit_original_response(content="There's no room for me in there 🥺")
+      else:
+        await interaction.edit_original_response(content="Failed to connect to voice channel. Please try again.")
       return False
 
   # TRY to Pipe music stream to FFMpeg:
-
-  # We love adhering to SHOUTcast recommended buffer sizes arounder here! yay!
-  #                  MARKER BYTES REQUIRED FOR PROPER SYNC!
-  # 4080 bytes per tick * 8 chunks = 32640 + 8 marker bytes = 32648 bits buffer (8 chunks)
-  # 4080 bytes per tick * 4 Chunks = 16320 + 4 marker bytes = 16324 bits per analysis (4 chunks)
+  ## Opus trancoding with loudnorm (12dB LRA)
+  ## Buffer size: 15Mb
+  ## Analyze Duration: 5 seconds
+  ## Allowed Protocols: http,https,tls,pipe
   try:
-    music_stream = discord.FFmpegOpusAudio(source=url, options="-analyzeduration 16324 -rtbufsize 32648 -filter:a loudnorm=I=-30:LRA=7:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0 -protocol_whitelist http,https,tls,pipe")
+    music_stream = discord.FFmpegOpusAudio(source=url, options="-rtbufsize 15M -analyzeduration 5000000 -filter:a loudnorm=I=-30:LRA=12:TP=-3 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0 -protocol_whitelist http,https,tls,pipe")
     await asyncio.sleep(1)  # Give FFmpeg a moment to start
   except Exception as e:
     logger.error(f"Failed to start FFmpeg stream: {e}")
