@@ -483,8 +483,25 @@ async def list_favorites(interaction: discord.Interaction):
 @discord.app_commands.checks.cooldown(rate=1, per=5, key=lambda i: i.guild_id)
 @bot_not_in_maintenance()
 @is_channel()
-async def play_favorite(interaction: discord.Interaction):
-  pass
+async def play_favorite(interaction: discord.Interaction, index: int):
+  favorites = await PERSONAL_FAVORITES_MANAGER.retrieve_user_favorites(user_id=interaction.user.id)
+  index = index-1
+
+  if len(favorites) <= 0:
+    await interaction.response.send_message(content="🥀 Looks like you don't have any favorites? Try adding one first", ephemeral=True)
+    return
+  if index < 0 or index >= len(favorites):
+    await interaction.response.send_message(content="👨‍🦯‍➡️ I can't find that favorite. Try again?", ephemeral=True)
+    return
+  fav_url = favorites[index][0].stream_url
+
+  response_message = f"📡 Starting your favorite channel {fav_url}"
+  await interaction.response.send_message(response_message, ephemeral=True)
+
+  if await play_stream(interaction, fav_url):
+    STATE_MANAGER.set_state(interaction.guild_id, 'private_stream', False)
+
+# Delete favorite command - Use this emoji: 🪦
 
 ### END FAVORITES COMMANDS ###
 
