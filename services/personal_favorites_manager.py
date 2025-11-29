@@ -64,10 +64,27 @@ class PersonalFavoritesManager:
     return True
   async def retrieve_user_favorites(self, user_id: int) -> list[PersonalFavorite]:
     async with self.ASYNC_SESSION_LOCAL() as session:
-      stmt = select(PersonalFavorite).where(PersonalFavorite.user_id == user_id).order_by(PersonalFavorite.__table__.c.creation_date)
+      stmt = self._all_user_favorites_statement(user_id)
       user_favorites = await session.execute(stmt)
       await session.commit()
 
     return user_favorites.all()
-  async def delete_user_favorite(self, user_id: int, favorite_id: int) -> bool:
-    pass
+  async def delete_user_favorite(self, favorite_to_delete: PersonalFavorite) -> bool:
+    if not favorite_to_delete:
+      self.logger.error("User {user_id} tried to delete favorite index {favorite_index}")
+      return False
+
+    self.logger.debug(favorite_to_delete)
+    self.logger.debug(favorite_to_delete.id)
+
+    async with self.ASYNC_SESSION_LOCAL() as session:
+      await session.delete(favorite_to_delete)
+      await session.commit()
+    return True
+
+
+
+
+  @staticmethod
+  def _all_user_favorites_statement(user_id: int):
+    return select(PersonalFavorite).where(PersonalFavorite.user_id == user_id).order_by(PersonalFavorite.__table__.c.creation_date)

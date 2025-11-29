@@ -501,7 +501,33 @@ async def play_favorite(interaction: discord.Interaction, index: int):
   if await play_stream(interaction, fav_url):
     STATE_MANAGER.set_state(interaction.guild_id, 'private_stream', False)
 
-# Delete favorite command - Use this emoji: 🪦
+@bot.tree.command(
+    name='remove-favorite',
+    description="Remove one of my favorited radio stations"
+)
+@discord.app_commands.checks.cooldown(rate=1, per=5, key=lambda i: i.guild_id)
+@bot_not_in_maintenance()
+@is_channel()
+async def remove_favorite(interaction: discord.Interaction, index: int):
+  favorites = await PERSONAL_FAVORITES_MANAGER.retrieve_user_favorites(user_id=interaction.user.id)
+  index = index-1
+
+  if len(favorites) <= 0:
+    await interaction.response.send_message(content="🥀 Looks like you don't have any favorites? Try adding one first", ephemeral=True)
+    return
+  if index < 0:
+    await interaction.response.send_message(content="🗅 Favorite index must be greater than 0", ephemeral=True)
+    return
+  if index >= len(favorites):
+    await interaction.response.send_message(content="👨‍🦯‍➡️ You don't have that many favorites in your favorites list", ephemeral=True)
+    return
+
+  favorite_to_delete = favorites[index][0]
+  if await PERSONAL_FAVORITES_MANAGER.delete_user_favorite(favorite_to_delete):
+    await interaction.response.send_message(content="🪦 Favorite deleted", ephemeral=True)
+  else:
+    await interaction.response.send_message(content="Something went wrong while deleting your favorite", ephemeral=True)
+
 
 ### END FAVORITES COMMANDS ###
 
