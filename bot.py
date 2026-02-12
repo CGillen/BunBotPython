@@ -975,7 +975,7 @@ async def play_stream(interaction, url):
   ## Analyze Duration: 5 seconds
   ## Allowed Protocols: http,https,tls,pipe
   try:
-    music_stream = discord.FFmpegOpusAudio(source=url, options="-filter:a dynaudnorm=f=200:g=5:p=0.8,volume=0.04 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0 -protocol_whitelist http,https,tls,pipe -ar 48000 -ac 2 -b:a 320k")
+    music_stream = discord.FFmpegOpusAudio(source=url, options="-filter:a dynaudnorm=f=200:g=5:p=0.8,volume=0.04 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0 -protocol_whitelist http,https,tls,pipe -ar 48000 -ac 2 -b:a 320k -rtsp_flags prefer_tcp -analyzeduration 5000000 -probesize 5000000")
     await asyncio.sleep(1)  # Give FFmpeg a moment to start
   except Exception as e:
     logger.error(f"Failed to start FFmpeg stream: {e}")
