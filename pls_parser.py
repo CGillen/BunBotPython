@@ -2,9 +2,13 @@ import asyncio
 import logging
 import os
 import subprocess
+import validators
 from typing import Optional
 
 logger = logging.getLogger('discord')
+
+def url_valid(url: str) -> bool:
+    return validators.url(url)
 
 async def parse_pls(url: str) -> Optional[str]:
     """
@@ -48,7 +52,11 @@ async def parse_pls(url: str) -> Optional[str]:
                         await curl.wait()  # Wait for it to die
                     except:
                         pass  # closed by itself
-                    logger.debug(f"Found Stream Link to be: {stream_url}")
+                    logger.debug("Verifying New URL is safe")
+                    if not url_valid(stream_url):
+                        logger.error("We Found a stream url but it was tainted, so we skipped it!")
+                        return None
+                    logger.debug(f"All checks Passed! Found Stream Link to be: {stream_url}")
                     return stream_url
             except UnicodeDecodeError:
                 continue

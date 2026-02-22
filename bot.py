@@ -204,8 +204,9 @@ async def play(interaction: discord.Interaction, url: str, private_stream: bool 
 
   response_message = f"Starting channel {url}" if not private_stream else "Starting channel ***OMINOUSLY***"
   await interaction.response.send_message(response_message, ephemeral=True)
-  if await play_stream(interaction, url):
-    STATE_MANAGER.set_state(interaction.guild_id, 'private_stream', private_stream)
+  STATE_MANAGER.set_state(interaction.guild_id, 'private_stream', private_stream)
+  await asyncio.sleep(0.5)
+  await play_stream(interaction, url)
 
 @bot.tree.command(
     name='leave',
