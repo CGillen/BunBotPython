@@ -1107,15 +1107,15 @@ async def stop_playback(guild: discord.Guild):
           logger.warning(f"[{guild.id}]: Failed to stop voice client after {MAX_ATTEMPTS} attempts")
     # then we handle disconnect from voice
     if voice_client.is_connected():
-      for i in range(10):
+      for i in range(MAX_ATTEMPTS):
         if not voice_client.is_connected():
           logger.info(f"[{guild.id}]: voice client disconnected")
           break
         await voice_client.disconnect()
         logger.debug("Attempting to disconnect client")
         await asyncio.sleep(1)
-        if i + 1 == 10:
-          logger.warning(f"[{guild.id}]: Failed to disconnect voice client after 10 attempts")
+        if i + 1 == MAX_ATTEMPTS:
+          logger.warning(f"[{guild.id}]: Failed to disconnect voice client after {MAX_ATTEMPTS} attempts")
     # if we still have voice_client after all that, tell it to go away so we can just forget it ever happened
     if hasattr(guild, 'voice_client'):
       try:
