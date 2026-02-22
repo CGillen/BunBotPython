@@ -30,7 +30,13 @@ LOG_FILE_PATH = Path(os.getenv('LOG_FILE_PATH', './')).joinpath('log.txt')
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
 
 # TLS VERIFY
-TLS_VERIFY = bool(os.environ.get('TLS_VERIFY', True))
+TLS_VERIFY = bool(int(os.environ.get('TLS_VERIFY', 1)))
+
+# Technical Configurations - Be Careful!
+MAX_ATTEMPTS = int(os.environ.get('MAX_ATTEMPTS', 10))
+HEARTBEAT_INTERVAL = int(os.environ.get('HEARTBEAT_INTERVAL', 15))
+BUF_SIZE_IN_KB = int(os.environ.get('BUF_SIZE_IN_KB', 1200))
+BITRATE_IN_KBPS = int(os.environ.get('BITRATE_IN_KBPS', 320))
 
 # CLUSETERING INFORMATION
 CLUSTER_ID = int(os.environ.get('CLUSTER_ID', 0))
@@ -116,6 +122,31 @@ async def on_ready():
   logger.info(f"Logged on as {bot.user}")
   logger.info(f"Shard IDS: {bot.shard_ids}")
   logger.info(f"Cluster ID: {bot.cluster_id}")
+
+  # Log all loaded environment variables
+  logger.info("Loaded configuration variables:")
+  config_vars = {
+    'BOT_TOKEN': BOT_TOKEN,
+    'LOG_FILE_PATH': str(LOG_FILE_PATH),
+    'LOG_LEVEL': LOG_LEVEL,
+    'TLS_VERIFY': TLS_VERIFY,
+    'TLS_Debug_int': int(TLS_VERIFY),
+    'MAX_ATTEMPTS': MAX_ATTEMPTS,
+    'HEARTBEAT_INTERVAL': f'{HEARTBEAT_INTERVAL}s',
+    'BUF_SIZE_IN_KB': f'{BUF_SIZE_IN_KB}KB',
+    'BITRATE_IN_KBPS': f'{BITRATE_IN_KBPS}kbps',
+    'EMPTY_CHANNEL_TIMEOUT': f'{int(os.environ.get("EMPTY_CHANNEL_TIMEOUT", 45*60))}s',
+    'TOTAL_CLUSTERS': TOTAL_CLUSTERS,
+    'TOTAL_SHARDS': TOTAL_SHARDS,
+    'NUMBER_OF_SHARDS_PER_CLUSTER': NUMBER_OF_SHARDS_PER_CLUSTER
+
+  }
+  sensitive_keys = {'BOT_TOKEN'}
+  for key, value in config_vars.items():
+    if key in sensitive_keys:
+      logger.info(f"  {key}: [REDACTED]")
+    else:
+      logger.info(f"  {key}: {value}")
 
 
 ### Custom Checks ###
@@ -960,7 +991,7 @@ async def play_stream(interaction, url):
   # Try to connect to voice chat, and only consider connected if both conditions met
   if not voice_client or not voice_client.is_connected():
     try:
-      voice_client = await voice_channel.connect(timeout=7)
+      voice_client = await voice_channel.connect(timeout=7, self_deaf=True)
       logger.info("Connected to voice channel for playback")
     except Exception as e:
       logger.error(f"Failed to connect to voice channel: {e}")
@@ -971,6 +1002,7 @@ async def play_stream(interaction, url):
       else:
         await interaction.edit_original_response(content="Failed to connect to voice channel. Please try again.")
       return False
+   
 
   # TRY to Pipe music stream to FFMpeg:
   ## Opus trancoding with loudnorm (12dB LRA)
@@ -978,7 +1010,23 @@ async def play_stream(interaction, url):
   ## Analyze Duration: 5 seconds
   ## Allowed Protocols: http,https,tls,pipe
   try:
-    music_stream = discord.FFmpegOpusAudio(source=url, options="-filter:a dynaudnorm=f=200:g=5:p=0.8,volume=0.06 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0 -protocol_whitelist http,https,tls,pipe -ar 48000 -ac 2 -b:a 320k -rtsp_flags prefer_tcp -rtbufsize 15000000 -analyzeduration 5000000 -fflags +discardcorrupt -bufsize 960k")
+    ffmpeg_options = [
+      "-filter:a dynaudnorm=f=200:g=5:p=0.8,volume=0.1",
+      "-reconnect 1",
+      "-reconnect_streamed 1",
+      "-reconnect_delay_max 120",
+      f"-tls_verify {int(TLS_VERIFY)}",
+      "-protocol_whitelist http,https,tls,pipe",
+      "-ar 48000",
+      "-ac 2",
+      f"-b:a {BITRATE_IN_KBPS}k",
+      "-rtsp_flags prefer_tcp",
+      "-rtbufsize 15000000",
+      "-analyzeduration 5000000",
+      "-fflags +discardcorrupt",
+      f"-bufsize {BUF_SIZE_IN_KB}k"
+    ]
+    music_stream = discord.FFmpegOpusAudio(source=url, options=" ".join(ffmpeg_options))
     await asyncio.sleep(1)  # Give FFmpeg a moment to start
   except Exception as e:
     logger.error(f"Failed to start FFmpeg stream: {e}")
@@ -1029,12 +1077,12 @@ async def play_stream(interaction, url):
   STATE_MANAGER.set_state(interaction.guild.id, 'is_active', True)
 
   # And let the user know what song is playing
+  await interaction.channel.send(content="Playing Toonz! 🎶")
   await send_song_info(interaction.guild.id)
   STATE_MANAGER.set_state(interaction.guild.id, 'cleaning_up', False)
   logger.info(f"[{interaction.guild.id}]: Spawning Heartbeat")
   create_and_start_heartbeat(interaction.guild.id)
   await asyncio.sleep(0.5)
-  await interaction.edit_original_response(content="Playing Toonz! 🎶")
 
   return True
 
@@ -1048,30 +1096,26 @@ async def stop_playback(guild: discord.Guild):
   if voice_client:
     # fist we stop playback if it says its playing
     if voice_client.is_playing():
-      max_attempts = 10
-      attempts = 0
-      while voice_client.is_playing() and attempts < max_attempts:
+      for i in range(MAX_ATTEMPTS):
+        if not voice_client.is_playing():
+          logger.info(f"[{guild.id}]: voice client stopped")
+          break
         voice_client.stop()
         logger.debug("Attempting to stop client")
         await asyncio.sleep(1)
-        attempts += 1
-      if attempts >= max_attempts:
-        logger.warning(f"[{guild.id}]: Failed to stop voice client after {max_attempts} attempts")
-      else:
-        logger.info(f"[{guild.id}]: voice client stopped")
+        if i + 1 == MAX_ATTEMPTS:
+          logger.warning(f"[{guild.id}]: Failed to stop voice client after {MAX_ATTEMPTS} attempts")
     # then we handle disconnect from voice
     if voice_client.is_connected():
-      max_attempts = 10
-      attempts = 0
-      while voice_client.is_connected() and attempts < max_attempts:
+      for i in range(10):
+        if not voice_client.is_connected():
+          logger.info(f"[{guild.id}]: voice client disconnected")
+          break
         await voice_client.disconnect()
         logger.debug("Attempting to disconnect client")
         await asyncio.sleep(1)
-        attempts += 1
-      if attempts >= max_attempts:
-        logger.warning(f"[{guild.id}]: Failed to disconnect voice client after {max_attempts} attempts")
-      else:
-        logger.info(f"[{guild.id}]: voice client disconnected")
+        if i + 1 == 10:
+          logger.warning(f"[{guild.id}]: Failed to disconnect voice client after 10 attempts")
     # if we still have voice_client after all that, tell it to go away so we can just forget it ever happened
     if hasattr(guild, 'voice_client'):
       try:
@@ -1097,7 +1141,7 @@ async def stop_playback(guild: discord.Guild):
   logger.info(f"[{guild.id}]: Heartbeat Destroyed")
 
 def create_and_start_heartbeat(guild_id: int):
-  @tasks.loop(seconds = 15)
+  @tasks.loop(seconds = HEARTBEAT_INTERVAL)
   async def heartbeat(guild_id: int):
     try:
       logger.debug(f"Running heartbeat for: {guild_id}")
