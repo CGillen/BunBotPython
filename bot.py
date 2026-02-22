@@ -379,7 +379,7 @@ async def maint(interaction: discord.Interaction, status: bool = True):
 
       await interaction.response.send_message("🛠️ Toggling maintenance mode... please wait")
       await STATE_MANAGER.set_maint(status=status)
-      await asyncio.sleep(.5)
+      await asyncio.sleep(0.5)
       active_guild_ids = STATE_MANAGER.all_active_guild_ids()
       for guild_id in active_guild_ids:
         text_channel = bot.get_channel(STATE_MANAGER.get_state(guild_id, 'text_channel_id'))
