@@ -1031,7 +1031,10 @@ async def play_stream(interaction, url):
   # And let the user know what song is playing
   await send_song_info(interaction.guild.id)
   STATE_MANAGER.set_state(interaction.guild.id, 'cleaning_up', False)
+  logger.info(f"[{interaction.guild.id}]: Spawning Heartbeat")
   create_and_start_heartbeat(interaction.guild.id)
+  await asyncio.sleep(0.5)
+  await interaction.edit_original_response(content="Playing Toonz! 🎶")
 
   return True
 
@@ -1090,7 +1093,8 @@ async def stop_playback(guild: discord.Guild):
   STATE_MANAGER.set_state(guild.id, 'cleaning_up', False)
 
   _active_heartbeats[guild.id].cancel()
-
+  await asyncio.sleep(.5)
+  logger.info(f"[{guild.id}]: Heartbeat Destroyed")
 
 def create_and_start_heartbeat(guild_id: int):
   @tasks.loop(seconds = 15)
