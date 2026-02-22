@@ -991,7 +991,7 @@ async def play_stream(interaction, url):
   # Try to connect to voice chat, and only consider connected if both conditions met
   if not voice_client or not voice_client.is_connected():
     try:
-      voice_client = await voice_channel.connect(timeout=7, self_deaf=True)
+      voice_client = await voice_channel.connect(timeout=7, self_mute=False, self_deaf=True)
       logger.info("Connected to voice channel for playback")
     except Exception as e:
       logger.error(f"Failed to connect to voice channel: {e}")
