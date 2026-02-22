@@ -975,7 +975,7 @@ async def play_stream(interaction, url):
   ## Analyze Duration: 5 seconds
   ## Allowed Protocols: http,https,tls,pipe
   try:
-    music_stream = discord.FFmpegOpusAudio(source=url, options="-filter:a dynaudnorm=f=200:g=5:p=0.8,volume=0.06 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0 -protocol_whitelist http,https,tls,pipe -ar 48000 -ac 2 -b:a 320k -rtsp_flags prefer_tcp -rtbufsize 15000000 -analyzeduration 5000000")
+    music_stream = discord.FFmpegOpusAudio(source=url, options="-filter:a dynaudnorm=f=200:g=5:p=0.8,volume=0.06 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 120 -tls_verify 0 -protocol_whitelist http,https,tls,pipe -ar 48000 -ac 2 -b:a 320k -rtsp_flags prefer_tcp -rtbufsize 15000000 -analyzeduration 5000000 -fflags +discardcorrupt -bufsize 320k")
     await asyncio.sleep(1)  # Give FFmpeg a moment to start
   except Exception as e:
     logger.error(f"Failed to start FFmpeg stream: {e}")
@@ -1042,18 +1042,30 @@ async def stop_playback(guild: discord.Guild):
   if voice_client:
     # fist we stop playback if it says its playing
     if voice_client.is_playing():
-      while voice_client.is_playing():
+      max_attempts = 10
+      attempts = 0
+      while voice_client.is_playing() and attempts < max_attempts:
         voice_client.stop()
         logger.debug("Attempting to stop client")
         await asyncio.sleep(1)
-      logger.info("voice client stopped")
+        attempts += 1
+      if attempts >= max_attempts:
+        logger.warning(f"[{guild.id}]: Failed to stop voice client after {max_attempts} attempts")
+      else:
+        logger.info(f"[{guild.id}]: voice client stopped")
     # then we handle disconnect from voice
     if voice_client.is_connected():
-      while voice_client.is_connected():
+      max_attempts = 10
+      attempts = 0
+      while voice_client.is_connected() and attempts < max_attempts:
         await voice_client.disconnect()
         logger.debug("Attempting to disconnect client")
         await asyncio.sleep(1)
-      logger.info("voice client disconnected")
+        attempts += 1
+      if attempts >= max_attempts:
+        logger.warning(f"[{guild.id}]: Failed to disconnect voice client after {max_attempts} attempts")
+      else:
+        logger.info(f"[{guild.id}]: voice client disconnected")
     # if we still have voice_client after all that, tell it to go away so we can just forget it ever happened
     if hasattr(guild, 'voice_client'):
       try:
@@ -1088,7 +1100,7 @@ def create_and_start_heartbeat(guild_id: int):
         return
 
       # Loop through monitors and execute. Let them handle their own shit
-      stationinfo = streamscrobbler.get_server_info(url)
+      stationinfo = await asyncio.to_thread(streamscrobbler.get_server_info, url)
       for monitor in MONITORS:
         await monitor.execute(guild_id=guild_id, state=STATE_MANAGER.get_state(guild_id), stationinfo=stationinfo)
     except Exception as e:
