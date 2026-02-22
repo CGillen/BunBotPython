@@ -1011,7 +1011,7 @@ async def play_stream(interaction, url):
   ## Allowed Protocols: http,https,tls,pipe
   try:
     ffmpeg_options = [
-      "-filter:a dynaudnorm=f=200:g=5:p=0.8,volume=0.1",
+      "-filter:a dynaudnorm=f=200:g=25:p=0.8,volume=0.1",
       "-reconnect 1",
       "-reconnect_streamed 1",
       "-reconnect_delay_max 120",
