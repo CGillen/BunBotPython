@@ -379,6 +379,7 @@ async def maint(interaction: discord.Interaction, status: bool = True):
 
       await interaction.response.send_message("🛠️ Toggling maintenance mode... please wait")
       await STATE_MANAGER.set_maint(status=status)
+      await asyncio.sleep(.5)
       active_guild_ids = STATE_MANAGER.all_active_guild_ids()
       for guild_id in active_guild_ids:
         text_channel = bot.get_channel(STATE_MANAGER.get_state(guild_id, 'text_channel_id'))
@@ -394,6 +395,7 @@ async def maint(interaction: discord.Interaction, status: bool = True):
             STATE_MANAGER.set_state(guild_id, 'was_active', True)
             embed = discord.Embed.from_dict(embed_data)
             await text_channel.send(embed=embed)
+            await asyncio.sleep(0.5)
         else:
           was_active = STATE_MANAGER.get_state(guild_id, 'was_active') or False
           if was_active is True and status == False:
@@ -409,13 +411,13 @@ async def maint(interaction: discord.Interaction, status: bool = True):
       if status:
         await interaction.edit_original_response(content="💾 saving state...")
         await STATE_MANAGER.save_state()
-        asyncio.sleep(5)
+        await asyncio.sleep(2)
         await interaction.edit_original_response(content="👷 Maintenance mode enabled")
       else:
         await interaction.edit_original_response(content="🧼 Purging State + DB...")
         STATE_MANAGER.clear_state(force=True)
         await STATE_MANAGER.clear_state_db()
-        asyncio.sleep(5)
+        await asyncio.sleep(3)
         await STATE_MANAGER.set_maint(status=status)
         await interaction.edit_original_response(content="👷 Maintenance mode disabled")
 
