@@ -871,6 +871,7 @@ async def handle_stream_disconnect(guild: discord.Guild):
   """Handle stream disconnection and clean up state properly"""
   try:
     _active_heartbeats[guild.id].cancel()
+    logger.info(f"[{guild.id}]: Heartbeat Destroyed")
     logger.info(f"[{guild.id}]: checking for stream disconnected")
 
     # Get current state before clearing
@@ -1138,7 +1139,6 @@ async def stop_playback(guild: discord.Guild):
 
   _active_heartbeats[guild.id].cancel()
   await asyncio.sleep(.5)
-  logger.info(f"[{guild.id}]: Heartbeat Destroyed")
 
 def create_and_start_heartbeat(guild_id: int):
   @tasks.loop(seconds = HEARTBEAT_INTERVAL)
