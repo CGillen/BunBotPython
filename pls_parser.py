@@ -59,6 +59,7 @@ async def parse_pls(url: str) -> Optional[str]:
                     logger.debug(f"All checks Passed! Found Stream Link to be: {stream_url}")
                     return stream_url
             except UnicodeDecodeError:
+                logger.warning("We received Data that couldn't be decoded or was corrupted")
                 continue
 
         # Was unsuccessful, let's try to clean up
