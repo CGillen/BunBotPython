@@ -61,8 +61,10 @@ class IcylessHTTPSHandler(urllib.request.HTTPSHandler):
 
 def init_urllib_hack(tls_verify: bool):
   # Create SSL context for HTTPS connections
-  ctx = ssl._create_unverified_context()
+  ctx = ssl.create_default_context()
   if not tls_verify:
+    ctx = ssl._create_unverified_context()
+    ctx.check_hostname = False
     ctx.set_ciphers('DEFAULT:@SECLEVEL=1')
 
   # Create an opener with both HTTP and HTTPS handlers

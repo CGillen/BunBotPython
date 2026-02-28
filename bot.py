@@ -6,6 +6,7 @@ import asyncio
 import os, datetime, signal
 import logging, logging.handlers
 import urllib
+import ssl
 import validators
 import psutil
 from services.health_monitor import HealthMonitor
@@ -859,7 +860,7 @@ async def get_station_info(url: str):
     logger.warning("Stream URL not set, can't send song information to channel")
     raise shout_errors.NoStreamSelected()
 
-  stationinfo = streamscrobbler.get_server_info(url)
+  stationinfo = await asyncio.to_thread(streamscrobbler.get_server_info, url, TLS_VERIFY)
   if stationinfo['status'] <= 0:
     logger.warning("Stream not up, unable to update song title")
     raise shout_errors.StreamOffline()
@@ -969,7 +970,7 @@ async def play_stream(interaction, url):
 
   logger.info(f"Starting channel {url}")
 
-  stationinfo = streamscrobbler.get_server_info(url)
+  stationinfo = await asyncio.to_thread(streamscrobbler.get_server_info, url, TLS_VERIFY)
   ## metadata is the bitrate and current song
   metadata = stationinfo['metadata']
   ## status is the integer to tell if the server is up or down, 0 is down, 1 is up, 2 is up with metadata
@@ -983,7 +984,13 @@ async def play_stream(interaction, url):
 
   # Try to get an http stream connection to the ... stream
   try:
-    urllib.request.urlopen(url, timeout=10)
+    ctx = ssl.create_default_context()
+    if not TLS_VERIFY:
+      ctx = ssl._create_unverified_context()
+      ctx.check_hostname = False
+      ctx.set_ciphers('DEFAULT:@SECLEVEL=1')
+    urllib.request.urlopen(url, timeout=10, context=ctx)
+
   except Exception as error: # if there is an error, let the user know.
     logger.error(f"Failed to connect to stream: {error}")
     await interaction.edit_original_response(content="Error fetching stream. Maybe the stream is down?")
@@ -1151,7 +1158,7 @@ def create_and_start_heartbeat(guild_id: int):
         return
 
       # Loop through monitors and execute. Let them handle their own shit
-      stationinfo = await asyncio.to_thread(streamscrobbler.get_server_info, url)
+      stationinfo = await asyncio.to_thread(streamscrobbler.get_server_info, url, TLS_VERIFY)
       for monitor in MONITORS:
         await monitor.execute(guild_id=guild_id, state=STATE_MANAGER.get_state(guild_id), stationinfo=stationinfo)
     except Exception as e:
