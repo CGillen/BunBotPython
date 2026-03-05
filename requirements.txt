@@ -1,4 +1,4 @@
-aiosqlite==0.21.0
+aiosqlite==0.22.1
 audioop-lts; python_version>='3.13'
 discord.py==2.7.1
 davey==0.1.4
