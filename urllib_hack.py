@@ -2,6 +2,14 @@ import urllib.request
 import http
 import ssl
 
+# let this being a warning to any future maintainers:
+## time wasted here: < 4 hours
+
+# global opener used when no explicit SSL context is passed to
+# ``urlopen``; mimics the private ``_opener`` that the stdlib uses.
+_opener = None
+
+
 class IcylessHTTPResponse(http.client.HTTPResponse):
   # OVERRIDE _read_status to convert ICY status code to HTTP/1.0
   def _read_status(self):
@@ -59,7 +67,40 @@ class IcylessHTTPSHandler(urllib.request.HTTPSHandler):
   def https_open(self, req):
     return self.do_open(IcylessHTTPSConnection, req)
 
+
+def _patched_urlopen(url, data=None, timeout=urllib.request.socket._GLOBAL_DEFAULT_TIMEOUT, *, context=None):
+    """Opener-friendly version of :func:`urllib.request.urlopen`.
+
+    ``urllib.request.urlopen`` normally builds a temporary opener that
+    contains nothing but a plain ``HTTPSHandler`` when *context* is
+    provided. This behavior was added in urllib 3 
+    
+    callers in this project (and the ``streamscrobbler``
+    library) always pass a context, which bypassed the icy‑status
+    conversions we install. This is partly my bad lmao 
+
+    when I changed streamscrobbler to use a context
+    I didn't realize that it would break the icy‑status handling
+    so this is a workaround to make sure that the custom handlers are always used
+    
+
+    This function mirrors the standard logic
+    but *always* attaches our custom handlers and forwards the context
+    object.
+    """
+    global _opener
+    if context is not None:
+        https_handler = IcylessHTTPSHandler(context=context)
+        opener = urllib.request.build_opener(IcylessHTTPHandler(), https_handler)
+    else:
+        if _opener is None:
+            _opener = urllib.request.build_opener(IcylessHTTPHandler(), IcylessHTTPSHandler())
+        opener = _opener
+    return opener.open(url, data, timeout)
+
+
 def init_urllib_hack(tls_verify: bool):
+
   # Create SSL context for HTTPS connections
   ctx = ssl.create_default_context()
   if not tls_verify:
@@ -75,3 +116,7 @@ def init_urllib_hack(tls_verify: bool):
 
   # Install opener as default opener
   urllib.request.install_opener(opener)
+
+  # sanity check: ensure urlopen is patched only once
+  if urllib.request.urlopen is not _patched_urlopen:
+      urllib.request.urlopen = _patched_urlopen
