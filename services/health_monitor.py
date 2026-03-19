@@ -27,7 +27,8 @@ class HealthMonitor(Monitor):
     # Update the last time we saw a user in the chat
     guild = self.client.get_guild(guild_id)
     # TODO: Check guild.voice_client.channel.members for any bots: https://discordpy.readthedocs.io/en/latest/api.html?highlight=voicechannel#discord.Member.bot
-    if guild.voice_client is not None and len(guild.voice_client.channel.members) > 1:
+    in_channel = [ x for x in guild.voice_client.channel.members if not x.bot ]
+    if guild.voice_client is not None and len(in_channel) > 1:
       self.state_manager.set_state(guild.id, 'last_active_user_time', datetime.datetime.now(datetime.UTC))
 
     return result
