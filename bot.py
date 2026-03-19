@@ -56,7 +56,6 @@ shard_ids = [
 # END CLUSTERING
 
 intents = discord.Intents.default()
-intents.members = True
 intents.guilds = True
 intents.voice_states = True
 # minimal member cache: only cache members related to events / interactions
