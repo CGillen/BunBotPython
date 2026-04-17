@@ -13,7 +13,7 @@ logger = logging.getLogger('discord')
 class StreamValidator:
     """Validates radio streams and extracts metadata"""
 
-    async def validate_stream(self, url: str) -> Dict[str, Any]:
+    def validate_stream(self, url: str) -> Dict[str, Any]:
         """
         Validate stream and return metadata
 
